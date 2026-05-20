@@ -12,14 +12,14 @@ generate_post.py  —  ВЕРСИЯ 2.0
 
 import os, json, time, random, hashlib, urllib.parse
 import requests, feedparser
-import google.generativeai as genai
+from groq import Groq
 from datetime import datetime, timezone
 
 # ── Переменные окружения (из GitHub Secrets) ─────────────────────────────────
 BOT_TOKEN      = os.environ["TELEGRAM_BOT_TOKEN"]
 MODERATOR_ID   = os.environ["TELEGRAM_MODERATOR_ID"]
 CHANNEL_ID     = os.environ["TELEGRAM_CHANNEL_ID"]
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 
 # ── RSS-ленты (AI-новости) ────────────────────────────────────────────────────
 RSS_FEEDS = [
@@ -159,12 +159,15 @@ def generate_content(article: dict) -> tuple[str, str]:
     """
     Возвращает (post_text, image_prompt).
     """
-    def _call():
-        genai.configure(api_key=GEMINI_API_KEY)
-        model    = genai.GenerativeModel("gemini-2.0-flash")
+      def _call():
+        client   = Groq(api_key=GROQ_API_KEY)
         prompt   = GEMINI_PROMPT.format(**article)
-        response = model.generate_content(prompt)
-        return response.text.strip()
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1000,
+        )
+        return response.choices[0].message.content.strip()
 
     raw = with_retry(_call)
 
