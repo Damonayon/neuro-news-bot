@@ -29,7 +29,12 @@ jobs:
 
       - name: 📦 Устанавливаем зависимости
         run: pip install -r requirements.txt
-
+      - name: 🔑 Проверка секрета
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          echo "Длина ключа: ${#GROQ_API_KEY}"
+          echo "Первые 4 символа: ${GROQ_API_KEY:0:4}"
       - name: 🚀 Генерируем пост и отправляем на одобрение
         env:
           TELEGRAM_BOT_TOKEN:    ${{ secrets.TELEGRAM_BOT_TOKEN }}
