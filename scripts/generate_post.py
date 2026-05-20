@@ -1,13 +1,5 @@
 """
-generate_post.py  —  ВЕРСИЯ 2.0
-────────────────────────────────────────────────────────────────────────────────
-Что делает:
-  1. Берёт свежие AI-новости из RSS-лент
-  2. Генерирует готовый пост + промпт для картинки (через Gemini)
-  3. Создаёт красивую картинку (через Pollinations AI — бесплатно, без ключа)
-  4. Отправляет тебе в Telegram: картинка + пост + кнопки ✅ / ❌
-  5. При любой ошибке — уведомляет тебя в Telegram
-────────────────────────────────────────────────────────────────────────────────
+generate_post.py  —  ВЕРСИЯ 4.0 (Groq + LLaMA)
 """
 
 import os, json, time, random, hashlib, urllib.parse
@@ -15,13 +7,13 @@ import requests, feedparser
 from groq import Groq
 from datetime import datetime, timezone
 
-# ── Переменные окружения (из GitHub Secrets) ─────────────────────────────────
-BOT_TOKEN      = os.environ["TELEGRAM_BOT_TOKEN"]
-MODERATOR_ID   = os.environ["TELEGRAM_MODERATOR_ID"]
-CHANNEL_ID     = os.environ["TELEGRAM_CHANNEL_ID"]
+# ── Переменные окружения ──────────────────────────────────────────────────────
+BOT_TOKEN    = os.environ["TELEGRAM_BOT_TOKEN"]
+MODERATOR_ID = os.environ["TELEGRAM_MODERATOR_ID"]
+CHANNEL_ID   = os.environ["TELEGRAM_CHANNEL_ID"]
 GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 
-# ── RSS-ленты (AI-новости) ────────────────────────────────────────────────────
+# ── RSS-ленты ─────────────────────────────────────────────────────────────────
 RSS_FEEDS = [
     "https://habr.com/ru/rss/hub/artificial_intelligence/all/",
     "https://habr.com/ru/rss/hub/machine_learning/all/",
@@ -32,15 +24,10 @@ RSS_FEEDS = [
     "https://blogs.nvidia.com/feed/",
 ]
 
-# ── Пути к файлам данных ──────────────────────────────────────────────────────
 DATA_DIR     = "data"
 PENDING_FILE = f"{DATA_DIR}/pending.json"
 POSTED_FILE  = f"{DATA_DIR}/posted_ids.json"
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Утилиты
-# ─────────────────────────────────────────────────────────────────────────────
 
 def load_json(path, default):
     try:
@@ -58,7 +45,6 @@ def article_id(url: str) -> str:
     return hashlib.md5(url.encode()).hexdigest()[:16]
 
 def notify_moderator(text: str):
-    """Отправляет системное сообщение тебе (ошибки, статусы)."""
     try:
         requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
@@ -66,37 +52,24 @@ def notify_moderator(text: str):
             timeout=10,
         )
     except Exception:
-        pass  # Если даже уведомление не дошло — ничего не сломается
+        pass
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Retry-декоратор (повтор при ошибке)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def with_retry(func, max_attempts: int = 3, initial_delay: int = 5):
-    """
-    Запускает func() до max_attempts раз.
-    Между попытками — экспоненциальная пауза (5s → 10s → 20s).
-    """
+def with_retry(func, max_attempts=3, initial_delay=5):
     last_err = None
-    delay    = initial_delay
+    delay = initial_delay
     for attempt in range(1, max_attempts + 1):
         try:
             return func()
         except Exception as e:
             last_err = e
             if attempt < max_attempts:
-                print(f"⚠️  Попытка {attempt}/{max_attempts} не удалась: {e}. Жду {delay}с...")
+                print(f"Попытка {attempt}/{max_attempts} не удалась: {e}. Жду {delay}с...")
                 time.sleep(delay)
                 delay *= 2
     raise last_err
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Шаг 1: Загружаем статьи из RSS
-# ─────────────────────────────────────────────────────────────────────────────
-
-def fetch_articles() -> list[dict]:
+def fetch_articles() -> list:
     articles = []
     for feed_url in RSS_FEEDS:
         try:
@@ -112,17 +85,12 @@ def fetch_articles() -> list[dict]:
                     "summary": entry.get("summary", "")[:600].strip(),
                 })
         except Exception as e:
-            print(f"⚠️  Ошибка загрузки {feed_url}: {e}")
-
-    print(f"📰 Статей из RSS: {len(articles)}")
+            print(f"Ошибка загрузки {feed_url}: {e}")
+    print(f"Статей из RSS: {len(articles)}")
     return articles
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Шаг 2: Генерируем пост + промпт для картинки (Gemini)
-# ─────────────────────────────────────────────────────────────────────────────
-
-GEMINI_PROMPT = """Ты — редактор Telegram-канала «Нейро-новости».
+PROMPT_TEMPLATE = """Ты — редактор Telegram-канала «Нейро-новости».
 
 На основе этой новости об ИИ:
 Заголовок: {title}
@@ -130,38 +98,32 @@ GEMINI_PROMPT = """Ты — редактор Telegram-канала «Нейро-
 Ссылка: {url}
 
 Напиши ответ СТРОГО в формате JSON (и ничего кроме JSON):
-{{
-  "post": "текст поста",
-  "image_prompt": "english image generation prompt"
-}}
+{{"post": "текст поста", "image_prompt": "english image generation prompt"}}
 
 Требования к полю "post":
-• Первые 1-2 строки — мощный хук, который остановит скролл
-• Объясни суть простым языком без технического жаргона  
-• Живой комментарий: почему это важно для обычного человека
-• 3-5 эмодзи уместно по тексту
-• Максимум 900 символов (это жёсткое ограничение!)
-• В конце: 3 хештега (#ИИ #нейросети + тематический)
-• Последняя строка: 🔗 {url}
-• Стиль: умный друг рассказывает за кофе
-• Запрещены слова: «революция», «прорыв», «невероятный»
+- Первые 1-2 строки — мощный хук, который остановит скролл
+- Объясни суть простым языком без жаргона
+- Живой комментарий: почему это важно для обычного человека
+- 3-5 эмодзи уместно по тексту
+- Максимум 900 символов
+- В конце: 3 хештега (#ИИ #нейросети + тематический)
+- Последняя строка: 🔗 {url}
+- Стиль: умный друг рассказывает за кофе
+- Запрещены слова: «революция», «прорыв», «невероятный»
 
 Требования к полю "image_prompt":
-• На английском языке
-• Описывает концептуальную картинку к теме новости
-• В стиле: futuristic digital art, minimalist, clean, 4k
-• Пример: "robot brain neural network glowing blue circuits, dark background, concept art, 4k"
-• Максимум 100 символов
+- На английском языке
+- Концептуальная картинка к теме новости
+- Стиль: futuristic digital art, minimalist, clean, 4k
+- Максимум 100 символов
 
 Верни ТОЛЬКО JSON без markdown-блоков и без пояснений."""
 
-def generate_content(article: dict) -> tuple[str, str]:
-    """
-    Возвращает (post_text, image_prompt).
-    """
-      def _call():
-        client   = Groq(api_key=GROQ_API_KEY)
-        prompt   = GEMINI_PROMPT.format(**article)
+
+def generate_content(article: dict) -> tuple:
+    def _call():
+        client = Groq(api_key=GROQ_API_KEY)
+        prompt = PROMPT_TEMPLATE.format(**article)
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
@@ -171,34 +133,25 @@ def generate_content(article: dict) -> tuple[str, str]:
 
     raw = with_retry(_call)
 
-    # Парсим JSON (с защитой от "грязного" вывода)
     try:
         clean = raw
         if "```" in clean:
             clean = clean.split("```")[1]
             if clean.startswith("json"):
                 clean = clean[4:]
-        data         = json.loads(clean.strip())
-        post_text    = data.get("post", "").strip()
+        data = json.loads(clean.strip())
+        post_text = data.get("post", "").strip()
         image_prompt = data.get("image_prompt", "AI technology concept art futuristic").strip()
         if not post_text:
             raise ValueError("Пустой пост")
         return post_text, image_prompt
-    except (json.JSONDecodeError, ValueError, KeyError) as e:
-        print(f"⚠️  Не удалось распарсить JSON: {e}. Использую сырой текст.")
+    except Exception as e:
+        print(f"Не удалось распарсить JSON: {e}. Использую сырой текст.")
         return raw.strip(), "AI technology neural network futuristic digital art"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Шаг 3: Генерируем картинку (Pollinations AI — полностью бесплатно)
-# ─────────────────────────────────────────────────────────────────────────────
-
 def build_image_url(image_prompt: str) -> str:
-    """
-    Pollinations.ai — бесплатная генерация картинок без API-ключа.
-    Просто формируем URL, Telegram сам загрузит картинку.
-    """
-    seed    = random.randint(1, 99999)
+    seed = random.randint(1, 99999)
     encoded = urllib.parse.quote(image_prompt)
     return (
         f"https://image.pollinations.ai/prompt/{encoded}"
@@ -206,39 +159,28 @@ def build_image_url(image_prompt: str) -> str:
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Шаг 4: Отправляем тебе на одобрение
-# ─────────────────────────────────────────────────────────────────────────────
-
 def send_for_approval(post_text: str, image_url: str, art_id: str) -> int:
-    """
-    Отправляет картинку + текст + кнопки одобрения в личку.
-    Возвращает message_id отправленного сообщения.
-    """
     keyboard = {
         "inline_keyboard": [[
             {"text": "✅ Опубликовать", "callback_data": f"approve_{art_id}"},
             {"text": "❌ Отклонить",    "callback_data": f"reject_{art_id}"},
         ]]
     }
-
     caption = f"📬 Новый пост — нужно одобрение\n\n{post_text}"
 
-    # Пробуем отправить с картинкой
     result = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
         json={
             "chat_id":      MODERATOR_ID,
             "photo":        image_url,
-            "caption":      caption[:1024],  # лимит Telegram для caption
+            "caption":      caption[:1024],
             "reply_markup": keyboard,
         },
         timeout=15,
     ).json()
 
-    # Если картинка не загрузилась — отправляем только текст
     if not result.get("ok"):
-        print(f"⚠️  Картинка не загрузилась: {result.get('description')}. Отправляю текстом.")
+        print(f"Картинка не загрузилась, отправляю текстом...")
         result = requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
             json={
@@ -255,43 +197,31 @@ def send_for_approval(post_text: str, image_url: str, art_id: str) -> int:
     return result["result"]["message_id"]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Главная функция
-# ─────────────────────────────────────────────────────────────────────────────
-
 def main():
-    print(f"\n🚀 Запуск генерации — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"\nЗапуск генерации — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
     try:
         posted_ids = load_json(POSTED_FILE, [])
         pending    = load_json(PENDING_FILE, {})
 
-        # Загружаем RSS и фильтруем уже обработанные
         articles     = fetch_articles()
         new_articles = [a for a in articles if a["id"] not in posted_ids]
-        print(f"✨ Новых статей: {len(new_articles)}")
+        print(f"Новых статей: {len(new_articles)}")
 
         if not new_articles:
-            print("ℹ️  Новых статей нет. Завершаем.")
+            print("Новых статей нет. Завершаем.")
             return
 
         article = new_articles[0]
-        print(f"📝 Обрабатываем: {article['title'][:80]}")
+        print(f"Обрабатываем: {article['title'][:80]}")
 
-        # Генерируем пост и промпт для картинки
         post_text, image_prompt = generate_content(article)
-        print(f"✍️  Пост: {len(post_text)} символов")
-        print(f"🎨 Промпт картинки: {image_prompt}")
+        print(f"Пост: {len(post_text)} символов")
 
-        # Строим URL картинки
         image_url = build_image_url(image_prompt)
-        print(f"🖼️  Картинка: {image_url[:80]}...")
-
-        # Отправляем на одобрение
         msg_id = send_for_approval(post_text, image_url, article["id"])
-        print(f"📤 Отправлено модератору, message_id={msg_id}")
+        print(f"Отправлено модератору, message_id={msg_id}")
 
-        # Сохраняем в очередь
         pending[article["id"]] = {
             "post_text":       post_text,
             "image_url":       image_url,
@@ -306,13 +236,13 @@ def main():
 
         save_json(PENDING_FILE, pending)
         save_json(POSTED_FILE,  posted_ids)
-        print("✅ Готово!\n")
+        print("Готово!\n")
 
     except Exception as e:
         error_msg = f"❌ Ошибка генерации поста:\n{type(e).__name__}: {e}"
         print(error_msg)
         notify_moderator(error_msg)
-        raise  # Пробрасываем, чтобы GitHub Actions пометил запуск как failed
+        raise
 
 
 if __name__ == "__main__":
