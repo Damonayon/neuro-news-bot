@@ -35,7 +35,7 @@ jobs:
           TELEGRAM_BOT_TOKEN:    ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_MODERATOR_ID: ${{ secrets.TELEGRAM_MODERATOR_ID }}
           TELEGRAM_CHANNEL_ID:   ${{ secrets.TELEGRAM_CHANNEL_ID }}
-          GEMINI_API_KEY:        ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY:        ${{ secrets.GEMINI_API_KEY }}
         run: python scripts/generate_post.py
 
       - name: 💾 Сохраняем данные в репозиторий
