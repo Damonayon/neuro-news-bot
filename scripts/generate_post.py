@@ -1,8 +1,8 @@
 """
-generate_post.py — ПРОФЕССИОНАЛЬНАЯ ВЕРСИЯ
+generate_post.py — ФИНАЛЬНАЯ ПРОФЕССИОНАЛЬНАЯ ВЕРСИЯ
 """
 
-import os, json, time, random, hashlib, urllib.parse
+import os, json, time, random, hashlib, urllib.parse, re
 import requests, feedparser
 from datetime import datetime, timezone
 
@@ -10,8 +10,6 @@ BOT_TOKEN      = os.environ["TELEGRAM_BOT_TOKEN"]
 MODERATOR_ID   = os.environ["TELEGRAM_MODERATOR_ID"]
 CHANNEL_ID     = os.environ["TELEGRAM_CHANNEL_ID"]
 OPENROUTER_KEY = os.environ["OPENROUTER_KEY"]
-
-FREE_MODELS = ["openrouter/free", "openrouter/free", "openrouter/free"]
 
 RSS_FEEDS = [
     "https://habr.com/ru/rss/hub/artificial_intelligence/all/",
@@ -74,80 +72,69 @@ def fetch_articles():
     return articles
 
 
-PROMPT_TEMPLATE = """Ты — топ-редактор Telegram-канала «Нейро-новости» с 500 000 подписчиков. Канал про ИИ для русскоязычной аудитории. Твои посты — эталон SMM: они вирусные, цепляющие, умные и человечные одновременно.
+PROMPT_TEMPLATE = """ВАЖНО: Весь текст поста пиши ТОЛЬКО на русском языке. Никакого английского в тексте поста.
+
+Ты — топ-редактор Telegram-канала «Нейро-новости». 500 000 подписчиков. Русскоязычная аудитория.
 
 НОВОСТЬ:
 Заголовок: {title}
 Содержание: {summary}
 Ссылка: {url}
 
-ЗАДАЧА: напиши идеальный Telegram-пост и промпт для иллюстрации.
+Верни СТРОГО JSON, ничего кроме JSON:
+{{"post": "текст поста на русском в Telegram HTML", "image_prompt": "visual description in english"}}
 
-Верни СТРОГО JSON без markdown и пояснений:
-{{"post": "текст поста в HTML", "image_prompt": "промпт на английском"}}
+═══ СТРУКТУРА ПОСТА (строго) ═══
 
-═══ ПРАВИЛА ДЛЯ ПОЛЯ "post" ═══
+[СТРОКА 1 — КРЮЧОК]
+Одна строка. Останавливает скролл. Варианты:
+• Шокирующий факт: "ИИ заменил 300 юристов за одну ночь 🔻"
+• Провокация: "Твоя профессия устареет через 2 года. Проверь себя 👇"  
+• Интрига: "Google скрывал это 6 месяцев. Теперь всё изменится 🤫"
 
-СТРУКТУРА ПОСТА (строго соблюдать):
+[ПУСТАЯ СТРОКА]
 
-1. СТРОКА-КРЮЧОК (1 строка)
-   — Интригующий факт, неожиданный угол, провокационный вопрос ИЛИ шокирующая цифра
-   — Читатель должен ОСТАНОВИТЬ скролл
-   — Примеры хороших крючков:
-     "ИИ только что уволил 300 юристов. И это только начало 🔻"
-     "ChatGPT врёт в 23% случаев. Вот как это проверить 👇"
-     "Эта нейросеть делает за 3 секунды то, на что у дизайнера уходит день 🤯"
+[2-3 ПРЕДЛОЖЕНИЯ — СУТЬ]
+Что случилось, простым языком. Цифры и факты. Никакого жаргона.
 
-2. ПУСТАЯ СТРОКА
+[ПУСТАЯ СТРОКА]
 
-3. СУТЬ (2-3 предложения)
-   — Что произошло — коротко и ясно
-   — Никакого жаргона, как другу за кофе
-   — Конкретные цифры и факты если есть
+[2-3 ПРЕДЛОЖЕНИЯ — ЗАЧЕМ ЭТО ТЕБЕ]
+Как это влияет на жизнь читателя конкретно.
+"Если ты фрилансер — это значит...", "Для малого бизнеса..."
 
-4. ПУСТАЯ СТРОКА
+[ПУСТАЯ СТРОКА]
 
-5. ПОЧЕМУ ЭТО ВАЖНО ЛИЧНО ДЛЯ ТЕБЯ (2-3 предложения)
-   — Как это изменит жизнь/работу обычного человека
-   — Конкретно: «Если ты дизайнер — это значит...», «Для малого бизнеса — это...»
-   — Эмоциональный, живой язык
+[1 СТРОКА — ВОПРОС ДЛЯ ОБСУЖДЕНИЯ]
+Дискуссионный вопрос или острый тезис. Мотивирует написать комментарий.
 
-6. ПУСТАЯ СТРОКА
+[ПУСТАЯ СТРОКА]
 
-7. ОСТРЫЙ ВОПРОС или МНЕНИЕ редакции (1 строка)
-   — Что-то, что заставит написать комментарий
-   — Дискуссионный тезис или интересный вопрос аудитории
+[ХЕШТЕГИ] #ИИ #нейросети #тематический_хештег
 
-8. ПУСТАЯ СТРОКА
+[ПУСТАЯ СТРОКА]
 
-9. ХЕШТЕГИ: ровно 3, через пробел: #ИИ и два тематических
+<a href="{url}">📖 Читать полностью</a>
 
-10. ПУСТАЯ СТРОКА
+═══ ФОРМАТИРОВАНИЕ ═══
+• <b>жирный</b> — 2-3 раза для ключевых слов
+• <i>курсив</i> — для важных акцентов
+• Эмодзи: 4-6 штук, только уместные
+• Длина: 180-260 слов
+• Запрещено: "революция", "прорыв", "невероятный", "уникальный"
+• Стиль: умный друг + чуть дерзкий, как лучшие русские tech-блогеры
 
-11. Последняя строка: <a href="{url}">📖 Читать полностью</a>
-
-ФОРМАТИРОВАНИЕ (Telegram HTML):
-— <b>жирный</b> — для ключевых слов (2-4 раза в посте, не больше)
-— <i>курсив</i> — для цитат или акцентов
-— Эмодзи: 4-6 штук, уместно, не в каждой строке
-— Длина: 180-280 слов
-— Запрещены слова: «революция», «прорыв», «невероятный», «потрясающий», «уникальный»
-— Тон: умный, живой, чуть дерзкий — как Medium + немного Дудь
-
-═══ ПРАВИЛА ДЛЯ ПОЛЯ "image_prompt" ═══
-— На английском
-— Концептуальная, атмосферная иллюстрация к теме
-— Стиль: cinematic digital art, dramatic lighting, ultra detailed, 8k, professional
-— Пример: "glowing AI brain neural network dark background neon blue purple cinematic 8k ultra detailed"
-— НЕ упоминать людей, лица, текст на картинке
-— Максимум 120 символов
+═══ IMAGE PROMPT (английский, max 120 символов) ═══
+• Концептуальная иллюстрация к теме
+• Стиль: cinematic concept art, dramatic lighting, 8k, no text, no faces
+• Пример: "glowing AI microchip dark background neon blue light cinematic 8k"
 
 Верни ТОЛЬКО JSON."""
 
 
 def call_ai(prompt):
     last_error = None
-    for model in FREE_MODELS:
+    for attempt in range(5):
         try:
             response = requests.post(
                 "https://openrouter.ai/api/v1/chat/completions",
@@ -156,31 +143,27 @@ def call_ai(prompt):
                     "Content-Type":  "application/json",
                 },
                 json={
-                    "model":      model,
-                    "messages":   [{"role": "user", "content": prompt}],
-                    "max_tokens": 1500,
-                    "temperature": 0.85,
+                    "model":       "openrouter/free",
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "max_tokens":  1500,
+                    "temperature": 0.8,
                 },
                 timeout=60,
             )
             if response.status_code == 200:
-                content = response.json()["choices"][0]["message"]["content"]
-                print(f"Модель ответила успешно")
-                return content.strip()
+                return response.json()["choices"][0]["message"]["content"].strip()
             elif response.status_code == 429:
-                print(f"Модель занята (429), пробую снова через 15с...")
-                time.sleep(15)
+                wait = 20 + attempt * 10
+                print(f"Попытка {attempt+1}: rate limit, жду {wait}с...")
+                time.sleep(wait)
                 last_error = "429 rate limit"
-                continue
             else:
                 last_error = f"{response.status_code}: {response.text[:200]}"
                 time.sleep(5)
-                continue
         except Exception as e:
             last_error = str(e)
             time.sleep(5)
-            continue
-    raise RuntimeError(f"Все попытки исчерпаны. Последняя ошибка: {last_error}")
+    raise RuntimeError(f"Все попытки исчерпаны: {last_error}")
 
 
 def generate_content(article):
@@ -201,17 +184,18 @@ def generate_content(article):
             raise ValueError("Пустой пост")
         return post_text, image_prompt
     except Exception as e:
-        print(f"Не удалось распарсить JSON: {e}")
-        return raw.strip(), "AI technology neural network cinematic dark background 8k"
+        print(f"JSON parse error: {e}")
+        return raw.strip(), "AI technology neural network cinematic dark 8k"
 
 
 def build_image_url(image_prompt):
-    """Pollinations AI — максимальное качество"""
+    """Квадратное изображение 1080x1080 — идеально для Telegram"""
     seed    = random.randint(10000, 99999)
-    encoded = urllib.parse.quote(image_prompt + ", no text, no watermark, professional")
+    prompt  = image_prompt + ", no text, no watermark, no faces, professional"
+    encoded = urllib.parse.quote(prompt)
     return (
         f"https://image.pollinations.ai/prompt/{encoded}"
-        f"?width=1280&height=720&model=flux&nologo=true&enhance=true&seed={seed}"
+        f"?width=1080&height=1080&model=flux&nologo=true&enhance=true&seed={seed}"
     )
 
 
@@ -223,8 +207,6 @@ def send_for_approval(post_text, image_url, art_id):
         ]]
     }
 
-    # Превью для модератора (без HTML-тегов для caption)
-    import re
     clean_preview = re.sub(r'<[^>]+>', '', post_text)
     caption = f"📬 Новый пост на одобрение:\n\n{clean_preview}"
 
@@ -236,16 +218,16 @@ def send_for_approval(post_text, image_url, art_id):
             "caption":      caption[:1024],
             "reply_markup": keyboard,
         },
-        timeout=20,
+        timeout=25,
     ).json()
 
     if not result.get("ok"):
-        print(f"Фото не загрузилось: {result.get('description')}, отправляю текстом...")
+        print(f"Фото не загрузилось, отправляю текстом...")
         result = requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
             json={
                 "chat_id":      MODERATOR_ID,
-                "text":         f"📬 Новый пост на одобрение:\n\n{clean_preview[:3800]}",
+                "text":         caption[:4096],
                 "reply_markup": keyboard,
             },
             timeout=10,
@@ -259,7 +241,6 @@ def send_for_approval(post_text, image_url, art_id):
 
 def main():
     print(f"\nЗапуск генерации — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-
     try:
         posted_ids   = load_json(POSTED_FILE, [])
         pending      = load_json(PENDING_FILE, {})
@@ -276,7 +257,6 @@ def main():
 
         post_text, image_prompt = generate_content(article)
         print(f"Пост готов: {len(post_text)} символов")
-        print(f"Image prompt: {image_prompt}")
 
         image_url = build_image_url(image_prompt)
         msg_id    = send_for_approval(post_text, image_url, article["id"])
@@ -292,17 +272,15 @@ def main():
         }
         posted_ids.append(article["id"])
         posted_ids = posted_ids[-500:]
-
         save_json(PENDING_FILE, pending)
         save_json(POSTED_FILE,  posted_ids)
         print("Готово!\n")
 
     except Exception as e:
-        error_msg = f"❌ Ошибка генерации поста:\n{type(e).__name__}: {e}"
+        error_msg = f"❌ Ошибка генерации:\n{type(e).__name__}: {e}"
         print(error_msg)
         notify_moderator(error_msg)
         raise
-
 
 if __name__ == "__main__":
     main()
