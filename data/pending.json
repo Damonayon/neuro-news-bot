@@ -6,5 +6,13 @@
     "article_url": "https://habr.com/ru/articles/1037922/?utm_campaign=1037922&utm_source=habrahabr&utm_medium=rss",
     "telegram_msg_id": 17,
     "created_at": "2026-05-22T03:25:14.598669+00:00"
+  },
+  "12935eef5be3778b": {
+    "post_text": "<b>Why we need to fight embeddable animotropy</b>: The hidden cost isn’t just in speed—it’s in clarity. Our analysis shows that centralizing data hides important local nuances. Let’s not ignore these numbers any longer.",
+    "image_url": "https://image.pollinations.ai/prompt/cinematic%20digital%20art%2C%20dark%20cosmic%20background%2C%20subtle%20neon%20lights%2C%20serious%20yet%20hopeful%20tone%2C%20professional%208k%2C%20modern%20design%2C%20no%20text%2C%20no%20watermark%2C%20professional?width=1280&height=720&model=flux&nologo=true&enhance=true&seed=78294",
+    "article_title": "Надо ли бороться с анизотропией эмбеддингов",
+    "article_url": "https://habr.com/ru/articles/1037906/?utm_campaign=1037906&utm_source=habrahabr&utm_medium=rss",
+    "telegram_msg_id": 18,
+    "created_at": "2026-05-22T03:34:59.311755+00:00"
   }
 }
