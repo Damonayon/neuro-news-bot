@@ -2,11 +2,9 @@ name: ✅ Проверка одобрений
 
 on:
   schedule:
-    # Каждые 10 минут — ловит нажатия кнопок и публикует одобренные посты
     - cron: "*/10 * * * *"
   workflow_dispatch:
 
-# Не запускать одновременно — предотвращает конфликты в git
 concurrency:
   group: check-approvals
   cancel-in-progress: false
@@ -21,27 +19,29 @@ jobs:
       - name: 📥 Клонируем репозиторий
         uses: actions/checkout@v4
 
-      - name: 🐍 Python 3.11 + кэш зависимостей
+      - name: 🐍 Python 3.11 + кэш
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"        # ← экономит ~40 секунд каждого запуска = ~4800 минут/мес
+          cache: "pip"
 
       - name: 📦 Устанавливаем зависимости
         run: pip install -r requirements.txt
 
-      - name: 🔍 Проверяем одобрения и публикуем
+      - name: 🔍 Проверяем одобрения
         env:
           TELEGRAM_BOT_TOKEN:    ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_MODERATOR_ID: ${{ secrets.TELEGRAM_MODERATOR_ID }}
           TELEGRAM_CHANNEL_ID:   ${{ secrets.TELEGRAM_CHANNEL_ID }}
         run: python scripts/check_approvals.py
 
-      - name: 💾 Сохраняем данные в репозиторий
+      - name: 💾 Сохраняем данные
         run: |
           git config --local user.email "bot@github.com"
           git config --local user.name  "Neuro-News Bot"
-          git pull --rebase origin main
+          git stash || true
+          git pull --rebase origin main || true
+          git stash pop || true
           git add data/
-          git diff --staged --quiet || git commit -m "✅ Обновление очереди [skip ci]"
-          git push
+          git diff --staged --quiet || git commit -m "✅ Очередь обновлена [skip ci]"
+          git push || true
