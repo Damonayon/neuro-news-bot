@@ -1,18 +1,24 @@
 """
-generate_post.py — ФИНАЛЬНАЯ ВЕРСИЯ (OpenRouter)
+generate_post.py — ФИНАЛЬНАЯ ВЕРСИЯ
+Автоматически переключается между 3 бесплатными моделями если одна занята.
 """
 
 import os, json, time, random, hashlib, urllib.parse
 import requests, feedparser
 from datetime import datetime, timezone
 
-# ── Переменные окружения ──────────────────────────────────────────────────────
 BOT_TOKEN      = os.environ["TELEGRAM_BOT_TOKEN"]
 MODERATOR_ID   = os.environ["TELEGRAM_MODERATOR_ID"]
 CHANNEL_ID     = os.environ["TELEGRAM_CHANNEL_ID"]
 OPENROUTER_KEY = os.environ["OPENROUTER_KEY"]
 
-# ── RSS-ленты ─────────────────────────────────────────────────────────────────
+# 3 бесплатные модели — перебираем по очереди если одна занята
+FREE_MODELS = [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "mistralai/mistral-7b-instruct:free",
+    "google/gemma-3-27b-it:free",
+]
+
 RSS_FEEDS = [
     "https://habr.com/ru/rss/hub/artificial_intelligence/all/",
     "https://habr.com/ru/rss/hub/machine_learning/all/",
@@ -52,20 +58,6 @@ def notify_moderator(text):
         )
     except Exception:
         pass
-
-def with_retry(func, max_attempts=3, initial_delay=5):
-    last_err = None
-    delay = initial_delay
-    for attempt in range(1, max_attempts + 1):
-        try:
-            return func()
-        except Exception as e:
-            last_err = e
-            if attempt < max_attempts:
-                print(f"Попытка {attempt}/{max_attempts} не удалась: {e}. Жду {delay}с...")
-                time.sleep(delay)
-                delay *= 2
-    raise last_err
 
 def fetch_articles():
     articles = []
@@ -119,36 +111,57 @@ PROMPT_TEMPLATE = """Ты — редактор Telegram-канала «Нейр�
 
 
 def call_ai(prompt):
-    """Вызов OpenRouter API напрямую через requests — без сторонних SDK."""
-    response = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {OPENROUTER_KEY}",
-            "Content-Type":  "application/json",
-        },
-        json={
-            "model": "meta-llama/llama-3.3-70b-instruct:free",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 1000,
-        },
-        timeout=30,
-    )
-    if response.status_code != 200:
-        raise RuntimeError(f"OpenRouter вернул {response.status_code}: {response.text}")
-    return response.json()["choices"][0]["message"]["content"].strip()
+    """Перебирает модели по очереди — если одна занята, берёт следующую."""
+    last_error = None
+    for model in FREE_MODELS:
+        print(f"Пробую модель: {model}")
+        try:
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_KEY}",
+                    "Content-Type":  "application/json",
+                },
+                json={
+                    "model":      model,
+                    "messages":   [{"role": "user", "content": prompt}],
+                    "max_tokens": 1000,
+                },
+                timeout=45,
+            )
+            if response.status_code == 200:
+                content = response.json()["choices"][0]["message"]["content"]
+                print(f"Успешно! Модель: {model}")
+                return content.strip()
+            elif response.status_code == 429:
+                print(f"Модель {model} занята (429), пробую следующую...")
+                time.sleep(3)
+                last_error = f"429 на {model}"
+                continue
+            else:
+                print(f"Модель {model} вернула {response.status_code}, пробую следующую...")
+                last_error = f"{response.status_code} на {model}: {response.text[:200]}"
+                continue
+        except Exception as e:
+            print(f"Ошибка с моделью {model}: {e}")
+            last_error = str(e)
+            continue
+
+    raise RuntimeError(f"Все модели недоступны. Последняя ошибка: {last_error}")
 
 
 def generate_content(article):
     prompt = PROMPT_TEMPLATE.format(**article)
-    raw = with_retry(lambda: call_ai(prompt))
+    raw = call_ai(prompt)
 
     try:
         clean = raw
         if "```" in clean:
-            clean = clean.split("```")[1]
+            parts = clean.split("```")
+            clean = parts[1] if len(parts) > 1 else parts[0]
             if clean.startswith("json"):
                 clean = clean[4:]
-        data = json.loads(clean.strip())
+        data         = json.loads(clean.strip())
         post_text    = data.get("post", "").strip()
         image_prompt = data.get("image_prompt", "AI technology concept art futuristic").strip()
         if not post_text:
@@ -189,7 +202,7 @@ def send_for_approval(post_text, image_url, art_id):
     ).json()
 
     if not result.get("ok"):
-        print(f"Картинка не загрузилась, отправляю текстом...")
+        print("Картинка не загрузилась, отправляю текстом...")
         result = requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
             json={
@@ -210,9 +223,8 @@ def main():
     print(f"\nЗапуск генерации — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
     try:
-        posted_ids = load_json(POSTED_FILE, [])
-        pending    = load_json(PENDING_FILE, {})
-
+        posted_ids   = load_json(POSTED_FILE, [])
+        pending      = load_json(PENDING_FILE, {})
         articles     = fetch_articles()
         new_articles = [a for a in articles if a["id"] not in posted_ids]
         print(f"Новых статей: {len(new_articles)}")
