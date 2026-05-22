@@ -13,11 +13,7 @@ CHANNEL_ID     = os.environ["TELEGRAM_CHANNEL_ID"]
 OPENROUTER_KEY = os.environ["OPENROUTER_KEY"]
 
 # 3 бесплатные модели — перебираем по очереди если одна занята
-FREE_MODELS = [
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "mistralai/mistral-7b-instruct:free",
-    "google/gemma-3-27b-it:free",
-]
+FREE_MODELS = ["openrouter/free", "openrouter/free", "openrouter/free"]
 
 RSS_FEEDS = [
     "https://habr.com/ru/rss/hub/artificial_intelligence/all/",
