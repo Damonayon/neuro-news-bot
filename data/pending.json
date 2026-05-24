@@ -39,5 +39,14 @@
     "msg_id": 32,
     "channel": "Нейро-новости",
     "created_at": "2026-05-24T14:10:07.455836+00:00"
+  },
+  "fd275f98564370a1": {
+    "post_text": "🤖 <b>ИИ \"оживил\" голоса погибших пилотов</b>. И вот что из этого вышло. \n\nИсследователи использовали нейросеть для воссоздания голосов пилотов, погибших в авиакатастрофах. Они загрузили в ИИ спектрограммы записей из кабины самолета. Результат оказался настолько спорным, что американский NTSB (Национальный совет по безопасности на транспорте) временно заблокировал доступ к своей системе документов. \n\n<b>Для юристов</b> — это вопрос будущего: можно ли использовать такие технологии как доказательство в суде? \n<b>Для разработчиков</b> — это сигнал: ИИ уже меняет методы работы с данными, о которых вы даже не задумывались. \n<b>Для каждого из нас</b> — это повод задуматься о границах этики и приватности в мире, где можно \"оживить\" голоса ушедших. \n\nРеально ли технологии ИИ восстановить историю? Или это игра с огнем? 👀 \n\n#ИИ #нейросети #будущее \n\n<a href=\"https://techcrunch.com/2026/05/22/ai-is-being-used-to-resurrect-the-voices-of-dead-pilots/\">📖 Читать полностью</a>",
+    "image_url": "https://image.pollinations.ai/prompt/AI-generated%20spectrogram%20in%20dark%20cockpit%2C%20glowing%20futuristic%20data%20visualizations%2C%20cinematic%20lighting%2C%20ultra%20detailed%2C%208k%2C%20NO%20humans%2C%20NO%20faces%2C%20NO%20text%2C%20NO%20letters%2C%20abstract%20only%2C%20professional?width=1080&height=1080&model=flux&nologo=true&enhance=true&seed=33347",
+    "title": "AI is being used to resurrect the voices of dead pilots",
+    "url": "https://techcrunch.com/2026/05/22/ai-is-being-used-to-resurrect-the-voices-of-dead-pilots/",
+    "msg_id": 33,
+    "channel": "Нейро-новости",
+    "created_at": "2026-05-24T14:25:58.592279+00:00"
   }
 }
