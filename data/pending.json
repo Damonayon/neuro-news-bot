@@ -30,5 +30,14 @@
     "url": "https://habr.com/ru/articles/1038662/?utm_campaign=1038662&utm_source=habrahabr&utm_medium=rss",
     "msg_id": 31,
     "created_at": "2026-05-24T13:53:07.439318+00:00"
+  },
+  "f4631699da51b480": {
+    "post_text": "🤖 <b>Gemini 3.5 Flash</b>: быстрая на тестах, сухая в реальности.\n\nGoogle только что представила свою новую модель <b>Gemini 3.5 Flash</b>. На бумаге она выглядит мощнее старой <b>Gemini 3.1 Pro</b>: модель превосходит её по популярным метрикам вроде Terminal Bench 2.1 и MCP Atlas. Но есть одно «но» — в диалогах она звучит, как скучный робот-бюрократ. Даже старенькая <b>Gemini 3.0 Flash</b> была человечнее.\n\nПочему так? Алгоритмы оптимизировали под бенчмарки, пожертвовав <b>живостью генераций</b>. И это уже не первый случай, когда в погоне за красивыми цифрами, в угоду RLHF-алгоритмам, убивают «душу» ИИ.\n\nЕсли ты <b>AI-разработчик</b> — не забывай, что цифры в тестах ≠ реальный пользовательский опыт. Настоящая магия — это когда слова «живые».\nЕсли ты <b>пользователь ИИ</b> — смотри глубже. Метрики не гарантируют, что чат-бот станет твоим идеальным собеседником или помощником.\n\nОптимизация или лоботомия — как думаешь, куда движутся нейросети? 💭\n\n#ИИ #нейросети #технологии\n\n<a href=\"https://habr.com/ru/articles/1038570/?utm_campaign=1038570&utm_source=habrahabr&utm_medium=rss\">📖 Читать полностью</a>",
+    "image_url": "https://image.pollinations.ai/prompt/futuristic%20AI%20neural%20network%2C%20glowing%20circuits%2C%20cold%20and%20sterile%20design%2C%20dark%20cinematic%20background%2C%20ultra%20detailed%2C%208k%2C%20NO%20humans%2C%20NO%20faces%2C%20NO%20text%2C%20NO%20letters%2C%20abstract%20only%2C%20professional?width=1080&height=1080&model=flux&nologo=true&enhance=true&seed=25957",
+    "title": "Как Gemini 3.5 Flash сломали ради красивых графиков (и почему она обходит 3.1 Pro только на бумаге)",
+    "url": "https://habr.com/ru/articles/1038570/?utm_campaign=1038570&utm_source=habrahabr&utm_medium=rss",
+    "msg_id": 32,
+    "channel": "Нейро-новости",
+    "created_at": "2026-05-24T14:10:07.455836+00:00"
   }
 }
