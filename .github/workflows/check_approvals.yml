@@ -25,7 +25,7 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: 📦 Устанавливаем зависимости
+      - name: 📦 Зависимости
         run: pip install -r requirements.txt
 
       - name: 🔍 Проверяем одобрения
@@ -33,6 +33,7 @@ jobs:
           TELEGRAM_BOT_TOKEN:    ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_MODERATOR_ID: ${{ secrets.TELEGRAM_MODERATOR_ID }}
           TELEGRAM_CHANNEL_ID:   ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          CHANNEL_TOPIC:         ${{ vars.CHANNEL_TOPIC || 'Нейро-новости' }}
         run: python scripts/check_approvals.py
 
       - name: 💾 Сохраняем данные
@@ -43,5 +44,5 @@ jobs:
           git pull --rebase origin main || true
           git stash pop || true
           git add data/
-          git diff --staged --quiet || git commit -m "✅ Очередь обновлена [skip ci]"
+          git diff --staged --quiet || git commit -m "✅ Очередь [skip ci]"
           git push || true
