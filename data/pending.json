@@ -22,5 +22,13 @@
     "article_url": "https://habr.com/ru/articles/1037874/?utm_campaign=1037874&utm_source=habrahabr&utm_medium=rss",
     "telegram_msg_id": 19,
     "created_at": "2026-05-22T03:43:49.435842+00:00"
+  },
+  "1bc6e87e525eab50": {
+    "post_text": "«Свобода выбора» глазами ИИ: что, если правильного ответа не существует? 🤔\n\nКогда нейросеть обучается, она ищет «оптимальный путь»: от хаоса к порядку, от ошибок к решению. Методы? Градиентный спуск, эволюционные алгоритмы... Но задумывался ли ты, что даже в этом строгом математическом процессе есть место для вариаций?\n\nУчёные говорят: возможно, не существует единственного «правильного» пути. Вместо этого у нас есть бесконечное множество вариантов. Если ты программист — это как писать код: один и тот же результат можно достичь разными способами. Если ты принимаешь решения каждый день — это осознание может изменить всё.\n\nА ты что думаешь: важен ли сам путь или только результат? 💭\n\n#ИИ #философия #технологии\n\n<a href=\"https://habr.com/ru/articles/1038662/?utm_campaign=1038662&utm_source=habrahabr&utm_medium=rss\">📖 Читать полностью</a>",
+    "image_url": "https://image.pollinations.ai/prompt/abstract%20glowing%20neural%20network%20in%20dark%20space%2C%20neon%20gradient%20lines%2C%20cinematic%20concept%20art%2C%208k%2C%20ultra%20detailed%2C%20NO%20humans%2C%20NO%20faces%2C%20NO%20text%2C%20NO%20letters%2C%20abstract%20only?width=1080&height=1080&model=flux&nologo=true&enhance=true&seed=30223",
+    "title": "Вариационное исчисление как метафора свободы выбора: от градиентного спуска к онтологии пути",
+    "url": "https://habr.com/ru/articles/1038662/?utm_campaign=1038662&utm_source=habrahabr&utm_medium=rss",
+    "msg_id": 31,
+    "created_at": "2026-05-24T13:53:07.439318+00:00"
   }
 }
