@@ -7,7 +7,7 @@
 ## 🔧 Стадия 1: Фундамент и надёжность
 
 - [x] **T1.1** — Полный аудит существующего кода → [AUDIT.md](AUDIT.md) ✓
-- [ ] **T1.2** — Миграция с JSON на нормальную БД (SQLite / Supabase + SQLAlchemy)
+- [x] **T1.2** — Миграция с JSON на SQLite + SQLAlchemy ✓
 - [ ] **T1.3** — Централизованное логирование (Sentry / Logfire)
 - [ ] **T1.4** — Retry-логика и Circuit Breaker (`tenacity`)
 - [ ] **T1.5** — Health-check workflow (каждые 30 мин)
@@ -68,4 +68,9 @@
 
 ---
 
-**Текущая задача:** T1.2 — Миграция с JSON на нормальную БД (ожидает решения по SQLite vs Supabase)
+**Текущая задача:** T1.3 — Централизованное логирование (Sentry / Logfire) — ждёт «go»
+
+**Бонусом закрыто в T1.2:**
+- C2 — общая `concurrency.group: data-write` для обоих workflow
+- C6 — валидация env через pydantic-settings
+- W1 — общий пакет `bot/` (нет дублей)

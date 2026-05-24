@@ -5,8 +5,10 @@ on:
     - cron: "0 7,13,19 * * *"
   workflow_dispatch:
 
+# ВНИМАНИЕ: общая группа с check_approvals — оба workflow пишут в data/bot.db,
+# нельзя допустить одновременный коммит → race condition.
 concurrency:
-  group: generate-post
+  group: data-write
   cancel-in-progress: false
 
 jobs:
@@ -36,7 +38,7 @@ jobs:
           TELEGRAM_CHANNEL_ID:   ${{ secrets.TELEGRAM_CHANNEL_ID }}
           GH_MODELS_TOKEN:       ${{ secrets.GH_MODELS_TOKEN }}
 
-          # ─── Конфиг канала (можно переопределить через secrets для каждого канала) ───
+          # ─── Конфиг канала (можно переопределить через vars) ───
           CHANNEL_TOPIC:    ${{ vars.CHANNEL_TOPIC    || 'Нейро-новости' }}
           CHANNEL_NICHE:    ${{ vars.CHANNEL_NICHE    || 'искусственный интеллект и нейросети' }}
           CHANNEL_AUDIENCE: ${{ vars.CHANNEL_AUDIENCE || 'русскоязычные, 18-45 лет, интересуются технологиями и будущим' }}
@@ -48,9 +50,9 @@ jobs:
         run: |
           git config --local user.email "bot@github.com"
           git config --local user.name  "Neuro-News Bot"
-          git stash || true
+          git stash --include-untracked || true
           git pull --rebase origin main || true
           git stash pop || true
           git add data/
           git diff --staged --quiet || git commit -m "📊 Данные [skip ci]"
-          git push || true
+          git push
