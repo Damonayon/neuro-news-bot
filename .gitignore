@@ -49,3 +49,6 @@ logs/
 
 # Локальные секреты Claude Code
 .claude/settings.local.json
+
+# README — только локально (по решению владельца)
+README.md
