@@ -1,35 +1,62 @@
 """
-generate_post.py — GitHub Models (GPT-4o)
+generate_post.py — ПРОФЕССИОНАЛЬНАЯ ВЕРСИЯ для сети каналов
+
+Особенности:
+- Универсальная архитектура: одна кодовая база для любого канала
+- Конфигурация канала через переменные окружения (тематика, источники, стиль)
+- Умный фильтр контента: отбирает только новости-релизы, отсеивает учебники/философию
+- Динамические рубрики: бот сам распознаёт тип новости и выбирает формат
+- Эталонные примеры вирусных постов в промпте (few-shot learning)
+- Жёсткие правила SMM: цифры в крючке, конкретная польза, разбивка структуры
+- Гарантированные рабочие гиперссылки (Telegram HTML)
 """
 
 import os, json, time, random, hashlib, urllib.parse, re
 import requests, feedparser
 from datetime import datetime, timezone
 
-BOT_TOKEN      = os.environ["TELEGRAM_BOT_TOKEN"]
-MODERATOR_ID   = os.environ["TELEGRAM_MODERATOR_ID"]
-CHANNEL_ID     = os.environ["TELEGRAM_CHANNEL_ID"]
-GITHUB_TOKEN   = os.environ["GITHUB_TOKEN"]
+# ─── Telegram + GitHub Models ────────────────────────────────────────────────
+BOT_TOKEN    = os.environ["TELEGRAM_BOT_TOKEN"]
+MODERATOR_ID = os.environ["TELEGRAM_MODERATOR_ID"]
+CHANNEL_ID   = os.environ["TELEGRAM_CHANNEL_ID"]
+GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 
 GITHUB_MODELS_URL = "https://models.inference.ai.azure.com/chat/completions"
-
-# GPT-4o → GPT-4o-mini как запасной
 MODELS = ["gpt-4o", "gpt-4o-mini"]
 
-RSS_FEEDS = [
-    "https://habr.com/ru/rss/hub/artificial_intelligence/all/",
-    "https://habr.com/ru/rss/hub/machine_learning/all/",
-    "https://techcrunch.com/category/artificial-intelligence/feed/",
-    "https://venturebeat.com/category/ai/feed/",
-    "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
-    "https://openai.com/blog/rss/",
-    "https://blogs.nvidia.com/feed/",
-]
+# ─── Конфигурация канала (через переменные окружения) ────────────────────────
+# Это позволяет одним и тем же кодом обслуживать ЛЮБОЙ канал сети.
+# Для нового канала просто создаёшь новый репозиторий и меняешь эти переменные.
+
+CHANNEL_TOPIC = os.environ.get("CHANNEL_TOPIC", "Нейро-новости")
+CHANNEL_NICHE = os.environ.get("CHANNEL_NICHE", "искусственный интеллект и нейросети")
+CHANNEL_AUDIENCE = os.environ.get(
+    "CHANNEL_AUDIENCE",
+    "русскоязычные, 18-45 лет, интересуются технологиями и будущим"
+)
+CHANNEL_LANG = os.environ.get("CHANNEL_LANG", "русский")
+
+# RSS-источники конкретно для этой ниши (можно переопределить через secrets)
+DEFAULT_FEEDS = {
+    "ai": [
+        "https://habr.com/ru/rss/hub/artificial_intelligence/all/",
+        "https://habr.com/ru/rss/hub/machine_learning/all/",
+        "https://techcrunch.com/category/artificial-intelligence/feed/",
+        "https://venturebeat.com/category/ai/feed/",
+        "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
+        "https://openai.com/blog/rss/",
+        "https://blogs.nvidia.com/feed/",
+    ],
+}
+RSS_FEEDS_RAW = os.environ.get("RSS_FEEDS", "")
+RSS_FEEDS = [u.strip() for u in RSS_FEEDS_RAW.split(",") if u.strip()] or DEFAULT_FEEDS["ai"]
 
 DATA_DIR     = "data"
 PENDING_FILE = f"{DATA_DIR}/pending.json"
 POSTED_FILE  = f"{DATA_DIR}/posted_ids.json"
 
+
+# ─── Утилиты ──────────────────────────────────────────────────────────────────
 
 def load_json(path, default):
     try:
@@ -56,6 +83,9 @@ def notify_moderator(text):
     except Exception:
         pass
 
+
+# ─── Загрузка статей из RSS ───────────────────────────────────────────────────
+
 def fetch_articles():
     articles = []
     for feed_url in RSS_FEEDS:
@@ -70,78 +100,50 @@ def fetch_articles():
                     "id":      article_id(url),
                     "title":   entry.get("title", "").strip(),
                     "url":     url,
-                    "summary": summary[:600].strip(),
+                    "summary": summary[:800].strip(),
                 })
         except Exception as e:
             print(f"Ошибка {feed_url}: {e}")
-    print(f"Статей из RSS: {len(articles)}")
+    print(f"Всего статей из RSS: {len(articles)}")
     return articles
 
 
-SYSTEM = """Ты — главный редактор топового Telegram-канала «Нейро-новости» об ИИ.
-Аудитория: русскоязычные, 18-45 лет, интересуются технологиями и будущим.
-Твои посты — вирусные, умные, живые. Отвечай ТОЛЬКО валидным JSON."""
+# ─── ШАГ 1: Фильтр качества статей ────────────────────────────────────────────
+# GPT-4o сам оценивает: это настоящая новость для канала или мусор?
 
-USER_PROMPT = """Напиши Telegram-пост про эту новость об ИИ.
+FILTER_SYSTEM = f"""Ты — главный редактор Telegram-канала «{CHANNEL_TOPIC}» про {CHANNEL_NICHE}.
+Аудитория: {CHANNEL_AUDIENCE}.
+Твоя задача — оценивать пригодность статей для публикации."""
 
-НОВОСТЬ:
-Заголовок: {title}
-Содержание: {summary}
-Ссылка: {url}
+FILTER_PROMPT = """Оцени, подходит ли эта статья для публикации в канале.
 
-Верни ТОЛЬКО JSON:
-{{"post": "текст поста", "image_prompt": "english visual prompt"}}
+ЗАГОЛОВОК: {title}
+СОДЕРЖАНИЕ: {summary}
 
-━━━ СТРУКТУРА ПОСТА ━━━
+Подходящие статьи (HIGH):
+✅ Новости о релизах, запусках, продуктах
+✅ Скандалы, увольнения, корпоративные события
+✅ Прорывы, рекорды, конкретные достижения с цифрами
+✅ Новые инструменты, которые читатель может попробовать сегодня
+✅ Кейсы применения с конкретным результатом
 
-Строка 1 — КРЮЧОК (останавливает скролл):
-Примеры стиля:
-• «ИИ сделал за 4 секунды то, на что юрист тратит день ⚡»
-• «Google скрывал это полгода. Больше не скрывает 🔓»
-• «Твоя профессия в этом списке? Проверь 👇»
-• «<b>93%</b> менеджеров не знают об этом инструменте. А зря 🎯»
+Подходящие, но не идеально (MEDIUM):
+⚠️ Аналитика рынка, тренды, прогнозы
+⚠️ Интервью с известными людьми
+⚠️ Сравнения продуктов
 
-(пустая строка)
+НЕ подходят (LOW):
+❌ Учебники, туториалы, "как сделать X"
+❌ Философские рассуждения о будущем
+❌ Чисто академические/научные статьи
+❌ Личные блоги ("как я сделал Y")
+❌ Реклама услуг и продуктов
 
-2-3 предложения — СУТЬ:
-Что произошло, простым языком. Конкретные цифры если есть. Никакого жаргона.
-
-(пустая строка)
-
-2-3 предложения — ПОЧЕМУ ЭТО ВАЖНО ТЕБЕ:
-Конкретно для читателя: «Если ты фрилансер...», «Для малого бизнеса это значит...»
-Живо, лично, без воды.
-
-(пустая строка)
-
-1 строка — ВОПРОС или ОСТРЫЙ ТЕЗИС:
-Провоцирует обсуждение. Заставляет написать комментарий.
-
-(пустая строка)
-
-#ИИ #нейросети #тематический_хештег
-
-(пустая строка)
-
-<a href="{url}">📖 Читать полностью</a>
-
-━━━ ПРАВИЛА ФОРМАТИРОВАНИЯ ━━━
-• Язык: ТОЛЬКО русский
-• <b>жирный</b> — ровно 2-3 раза для ключевых фактов/цифр
-• Эмодзи: 5-7 штук, уместно, не подряд
-• Длина: 180-250 слов — строго
-• Запрещено: «революция», «прорыв», «невероятный», «уникальный»
-• Тон: умный друг с характером — как лучшие российские tech-блогеры
-
-━━━ IMAGE PROMPT ━━━
-• Английский, до 120 символов
-• Абстрактная концептуальная иллюстрация к теме
-• Стиль: cinematic concept art, dark background, neon glow, 8k, ultra detailed
-• ЗАПРЕЩЕНО: humans, faces, people, text, letters, words
-• Пример: «glowing AI processor dark space electric blue circuits neon 8k cinematic»"""
+Верни СТРОГО JSON:
+{{"quality": "HIGH" | "MEDIUM" | "LOW", "reason": "краткое обоснование на русском"}}"""
 
 
-def call_model(model, messages):
+def call_model(model, messages, temperature=0.7, max_tokens=1500):
     resp = requests.post(
         GITHUB_MODELS_URL,
         headers={
@@ -151,63 +153,226 @@ def call_model(model, messages):
         json={
             "model":       model,
             "messages":    messages,
-            "max_tokens":  1500,
-            "temperature": 0.82,
+            "max_tokens":  max_tokens,
+            "temperature": temperature,
         },
         timeout=60,
     )
     return resp.status_code, resp
 
 
-def call_ai(prompt):
-    messages = [
-        {"role": "system", "content": SYSTEM},
-        {"role": "user",   "content": prompt},
-    ]
-
+def call_ai(messages, temperature=0.7, max_tokens=1500):
+    """Вызов с автопереключением на резервную модель."""
     for model in MODELS:
-        print(f"Пробую: {model}")
-        for attempt in range(4):
+        for attempt in range(3):
             try:
-                status, resp = call_model(model, messages)
-
+                status, resp = call_model(model, messages, temperature, max_tokens)
                 if status == 200:
-                    content = resp.json()["choices"][0]["message"]["content"].strip()
-                    print(f"✓ Ответ от {model}")
-                    return content
-
+                    return resp.json()["choices"][0]["message"]["content"].strip()
                 elif status == 429:
-                    wait = 30 * (attempt + 1)
-                    print(f"  Rate limit, жду {wait}с...")
+                    wait = 20 * (attempt + 1)
+                    print(f"  Rate limit {model}, жду {wait}с...")
                     time.sleep(wait)
-
                 elif status in (404, 400):
-                    print(f"  Модель {model} недоступна → следующая")
+                    print(f"  {model} недоступна → пробую следующую")
                     break
-
                 else:
-                    print(f"  Ошибка {status}: {resp.text[:150]}")
-                    time.sleep(10)
-
+                    print(f"  {model} ошибка {status}: {resp.text[:150]}")
+                    time.sleep(5)
             except Exception as e:
                 print(f"  Исключение: {e}")
-                time.sleep(10)
-
+                time.sleep(5)
     raise RuntimeError("Все модели недоступны")
+
+
+def filter_article(article):
+    """Возвращает уровень качества статьи: HIGH/MEDIUM/LOW"""
+    messages = [
+        {"role": "system", "content": FILTER_SYSTEM},
+        {"role": "user",   "content": FILTER_PROMPT.format(**article)},
+    ]
+    try:
+        raw = call_ai(messages, temperature=0.3, max_tokens=200)
+        clean = raw.strip()
+        if "```" in clean:
+            for p in clean.split("```"):
+                p = p.strip()
+                if p.startswith("json"): p = p[4:].strip()
+                if p.startswith("{"): clean = p; break
+        data = json.loads(clean)
+        return data.get("quality", "LOW"), data.get("reason", "")
+    except Exception as e:
+        print(f"  Ошибка фильтра: {e} — считаем MEDIUM")
+        return "MEDIUM", "ошибка парсинга"
+
+
+# ─── ШАГ 2: Генерация поста с эталонными примерами ───────────────────────────
+
+GENERATOR_SYSTEM = f"""Ты — главный редактор топового Telegram-канала «{CHANNEL_TOPIC}».
+Тема канала: {CHANNEL_NICHE}.
+Аудитория: {CHANNEL_AUDIENCE}.
+Язык: {CHANNEL_LANG}.
+
+Ты пишешь как лучшие SMM-специалисты России: цепляюще, конкретно, с цифрами и пользой.
+Каждый пост должен заставить читателя остановиться, прочитать до конца и поделиться.
+
+Отвечай ТОЛЬКО валидным JSON."""
+
+GENERATOR_PROMPT = """Напиши идеальный Telegram-пост на основе этой новости.
+
+НОВОСТЬ:
+Заголовок: {title}
+Содержание: {summary}
+Ссылка: {url}
+
+Тип контента: {rubric}
+
+═══════════════════════════════════════════════
+ЭТАЛОННЫЕ ПРИМЕРЫ ВИРУСНЫХ ПОСТОВ (учись на них!)
+═══════════════════════════════════════════════
+
+ПРИМЕР 1 (новый инструмент):
+─────────────────────────────
+🚨 Новый инструмент собрал <b>50 000 пользователей</b> за 48 часов. И он бесплатный.
+
+Vercel запустил v0 — нейросеть, которая по описанию рисует готовый интерфейс сайта. Пишешь «дашборд для продаж с графиками» — получаешь рабочий React-компонент за 30 секунд.
+
+Если ты <b>предприниматель</b> — это значит, что MVP теперь делается за вечер, а не за неделю.
+Если ты <b>дизайнер</b> — пора учиться промптингу, иначе твою работу заберут.
+Если ты <b>разработчик</b> — это твой новый Stack Overflow на стероидах.
+
+Готовы ли мы к миру, где код пишет ИИ, а человек только редактирует? 🤔
+
+#ИИ #нейросети #инструменты
+
+<a href="URL">📖 Читать полностью</a>
+
+─────────────────────────────
+
+ПРИМЕР 2 (срочная новость / скандал):
+─────────────────────────────
+🔻 OpenAI <b>уволил 300 контент-модераторов</b>. Их работу теперь делает GPT-4.
+
+Компания первой в индустрии полностью заменила людей-модераторов на свою же модель. По данным Bloomberg, это сэкономит OpenAI $12 млн в год.
+
+Если ты работаешь в найме на рутинных задачах — посмотри на это <b>дважды</b>. Это не будущее. Это уже настоящее.
+
+А ты бы доверил ИИ модерировать твой контент? 💭
+
+#ИИ #новости #будущее
+
+<a href="URL">📖 Читать полностью</a>
+
+─────────────────────────────
+
+ПРИМЕР 3 (цифра дня / исследование):
+─────────────────────────────
+📊 <b>73%</b> сотрудников втайне используют ChatGPT на работе. А босс не в курсе.
+
+Стэнфорд опросил 4500 офисных работников. Выводы шокируют:
+• 73% используют ИИ ежедневно
+• 84% делают это без ведома руководства  
+• 91% увеличили продуктивность минимум на четверть
+
+«Теневая революция» уже происходит. Только в одной отдельно взятой переговорке.
+
+Ты в этих 73%? 🤫
+
+#ИИ #работа #исследование
+
+<a href="URL">📖 Читать полностью</a>
+
+═══════════════════════════════════════════════
+ТРЕБОВАНИЯ К ТВОЕМУ ПОСТУ
+═══════════════════════════════════════════════
+
+Верни ТОЛЬКО JSON:
+{{"post": "текст поста в HTML", "image_prompt": "english visual prompt"}}
+
+ОБЯЗАТЕЛЬНАЯ СТРУКТУРА:
+
+[Строка 1] КРЮЧОК
+Обязательно: либо цифра, либо неожиданный факт, либо провокация.
+Эмодзи в начале: 🚨 🔥 🔻 📊 🎯 ⚡ 🤖 🧠
+<b>Жирным</b> — ключевую цифру или слово.
+
+[пустая строка]
+
+[Строки 2-4] СУТЬ
+3-4 предложения. Конкретика: кто сделал, что, когда, какие цифры.
+Простой язык, как другу. Никаких "в данной статье говорится".
+
+[пустая строка]
+
+[Строки 5-7] ПОЛЬЗА ДЛЯ ЧИТАТЕЛЯ
+Конкретные сегменты: "Если ты <b>фрилансер</b> — ...", "Для <b>малого бизнеса</b> — ..."
+Минимум 2 сегмента. Каждый — с реальной пользой/угрозой.
+
+[пустая строка]
+
+[Строка 8] ВОПРОС/ТЕЗИС
+Острый вопрос для комментариев. Эмодзи в конце: 🤔 💭 👀 🔥
+
+[пустая строка]
+
+[Строка 9] #ИИ #нейросети #тематический
+
+[пустая строка]
+
+[Строка 10] <a href="{url}">📖 Читать полностью</a>
+⚠️ ВАЖНО: вставь именно эту ссылку дословно с правильным URL!
+
+═══════════════════════════════════════════════
+ЖЁСТКИЕ ПРАВИЛА
+═══════════════════════════════════════════════
+
+✅ Цифры: минимум одна цифра в посте (лучше в крючке)
+✅ <b>Жирный</b>: 3-5 раз для ключевых слов
+✅ Эмодзи: 5-8 штук, уместно, не подряд
+✅ Длина: 180-260 слов СТРОГО
+✅ Язык: только {lang}
+✅ Сегменты пользы: минимум 2
+
+❌ Запрещено: «революция», «прорыв», «невероятный», «уникальный», «потрясающий»
+❌ Запрещено: вода типа «в данной статье», «как мы знаем», «в современном мире»
+❌ Запрещено: общие фразы без цифр и конкретики
+
+═══════════════════════════════════════════════
+IMAGE PROMPT (английский, до 130 символов)
+═══════════════════════════════════════════════
+
+Стиль: cinematic concept art, dramatic lighting, ultra detailed, 8k
+Запрещено: humans, faces, people, text, letters, words
+
+Пример: "glowing AI processor dark space electric blue neon circuits cinematic 8k ultra detailed"
+
+Верни ТОЛЬКО JSON."""
+
+
+def detect_rubric(article):
+    """Простая эвристика — определяет тип новости по ключевым словам."""
+    text = (article["title"] + " " + article["summary"]).lower()
+
+    if any(w in text for w in ["launch", "release", "запуск", "релиз", "выпустил", "представил", "анонс"]):
+        return "🚀 Запуск/Релиз нового продукта"
+    if any(w in text for w in ["уволил", "fired", "laid off", "сократил", "закрыл"]):
+        return "🔻 Корпоративная новость/Скандал"
+    if any(w in text for w in ["%", "percent", "study", "research", "исследование", "опрос"]):
+        return "📊 Исследование/Цифра дня"
+    if any(w in text for w in ["tool", "app", "инструмент", "приложение", "сервис"]):
+        return "🔧 Новый инструмент"
+    if any(w in text for w in ["billion", "million", "raised", "funding", "млрд", "млн", "инвест"]):
+        return "💰 Инвестиции/Финансы"
+    return "🤖 Новость дня"
 
 
 def parse_response(raw):
     clean = raw.strip()
-
     if "```" in clean:
-        parts = clean.split("```")
-        for part in parts:
-            part = part.strip()
-            if part.startswith("json"):
-                part = part[4:].strip()
-            if part.startswith("{"):
-                clean = part
-                break
+        for p in clean.split("```"):
+            p = p.strip()
+            if p.startswith("json"): p = p[4:].strip()
+            if p.startswith("{"): clean = p; break
 
     data         = json.loads(clean)
     post_text    = data.get("post", "").strip()
@@ -216,10 +381,11 @@ def parse_response(raw):
     if not post_text:
         raise ValueError("Пустой пост")
 
-    # Проверка на русский язык
-    ru = sum(1 for c in post_text if '\u0400' <= c <= '\u04FF')
-    if ru < 30:
-        raise ValueError(f"Пост не на русском (ru символов: {ru})")
+    # Проверка языка (для русского канала)
+    if CHANNEL_LANG.lower() == "русский":
+        ru = sum(1 for c in post_text if '\u0400' <= c <= '\u04FF')
+        if ru < 30:
+            raise ValueError(f"Пост не на русском (ru символов: {ru})")
 
     if not image_prompt:
         image_prompt = "AI neural network dark space neon glow cinematic 8k"
@@ -227,24 +393,59 @@ def parse_response(raw):
     return post_text, image_prompt
 
 
+def ensure_correct_link(post_text, article_url):
+    """
+    Гарантия что в посте правильная гиперссылка.
+    Если модель пропустила или испортила — добавляем её принудительно.
+    """
+    # Проверяем есть ли правильная гиперссылка
+    correct_link = f'<a href="{article_url}">📖 Читать полностью</a>'
+
+    # Если ссылка уже корректная — оставляем
+    if correct_link in post_text:
+        return post_text
+
+    # Удаляем все попытки сделать гиперссылку (могли быть с ошибками)
+    post_text = re.sub(r'<a\s+href=[^>]*>.*?</a>', '', post_text, flags=re.IGNORECASE | re.DOTALL)
+    post_text = re.sub(r'📖\s*Читать\s*полностью', '', post_text, flags=re.IGNORECASE)
+    post_text = post_text.rstrip()
+
+    # Добавляем правильную ссылку в конец
+    return post_text + f"\n\n{correct_link}"
+
+
 def generate_content(article):
-    prompt = USER_PROMPT.format(**article)
+    rubric = detect_rubric(article)
+    print(f"  Рубрика: {rubric}")
+
+    prompt = GENERATOR_PROMPT.format(
+        title=article["title"],
+        summary=article["summary"],
+        url=article["url"],
+        rubric=rubric,
+        lang=CHANNEL_LANG,
+    )
+    messages = [
+        {"role": "system", "content": GENERATOR_SYSTEM},
+        {"role": "user",   "content": prompt},
+    ]
 
     for attempt in range(3):
         try:
-            raw = call_ai(prompt)
-            return parse_response(raw)
+            raw = call_ai(messages, temperature=0.85, max_tokens=1500)
+            post_text, image_prompt = parse_response(raw)
+            post_text = ensure_correct_link(post_text, article["url"])
+            return post_text, image_prompt
         except (json.JSONDecodeError, ValueError) as e:
-            print(f"Попытка {attempt+1}: ошибка парсинга — {e}")
-            time.sleep(5)
+            print(f"  Попытка {attempt+1}: ошибка парсинга — {e}")
+            time.sleep(3)
 
-    raise RuntimeError("Не удалось получить корректный пост")
+    raise RuntimeError("Не удалось сгенерировать корректный пост")
 
 
 def build_image_url(prompt):
-    """1080x1080 — квадрат, идеал для Telegram. Модель flux — лучшее качество."""
     seed    = random.randint(10000, 99999)
-    full    = f"{prompt}, NO humans, NO faces, NO text, NO letters, abstract only"
+    full    = f"{prompt}, NO humans, NO faces, NO text, NO letters, abstract only, professional"
     encoded = urllib.parse.quote(full)
     return (
         f"https://image.pollinations.ai/prompt/{encoded}"
@@ -261,7 +462,7 @@ def send_for_approval(post_text, image_url, art_id):
     }
 
     preview = re.sub(r'<[^>]+>', '', post_text)
-    caption = f"📬 Новый пост на одобрение:\n\n{preview}"
+    caption = f"📬 Новый пост [{CHANNEL_TOPIC}]:\n\n{preview}"
 
     result = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
@@ -275,7 +476,7 @@ def send_for_approval(post_text, image_url, art_id):
     ).json()
 
     if not result.get("ok"):
-        print(f"Фото не загрузилось, отправляю текстом")
+        print(f"Фото не загрузилось ({result.get('description')}), отправляю текстом")
         result = requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
             json={
@@ -292,50 +493,83 @@ def send_for_approval(post_text, image_url, art_id):
     return result["result"]["message_id"]
 
 
+# ─── ГЛАВНАЯ ФУНКЦИЯ ──────────────────────────────────────────────────────────
+
 def main():
-    print(f"\n{'='*50}")
-    print(f"Запуск — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    print(f"{'='*50}")
+    print(f"\n{'='*60}")
+    print(f"Канал: «{CHANNEL_TOPIC}»  |  {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"{'='*60}")
 
     try:
         posted_ids   = load_json(POSTED_FILE, [])
         pending      = load_json(PENDING_FILE, {})
         articles     = fetch_articles()
         new_articles = [a for a in articles if a["id"] not in posted_ids]
-        print(f"Новых статей: {len(new_articles)}")
+        print(f"Новых статей в RSS: {len(new_articles)}")
 
         if not new_articles:
             print("Нет новых статей.")
             return
 
-        article = new_articles[0]
-        print(f"Статья: {article['title'][:80]}")
+        # ФИЛЬТРАЦИЯ: ищем лучшую статью
+        print(f"\nФильтрация качества (top-{min(10, len(new_articles))} кандидатов):")
+        best_article = None
+        first_medium = None
 
-        post_text, image_prompt = generate_content(article)
-        print(f"Пост: {len(post_text)} символов")
-        print(f"Image: {image_prompt[:60]}")
+        for i, article in enumerate(new_articles[:10]):
+            print(f"\n[{i+1}] {article['title'][:70]}")
+            quality, reason = filter_article(article)
+            print(f"  → {quality}: {reason}")
+
+            # Помечаем как обработанную в любом случае
+            posted_ids.append(article["id"])
+
+            if quality == "HIGH":
+                best_article = article
+                print(f"  ✅ ВЫБРАНА КАК HIGH")
+                break
+            elif quality == "MEDIUM" and first_medium is None:
+                first_medium = article
+
+        # Если HIGH не нашли — берём первую MEDIUM
+        if not best_article:
+            best_article = first_medium
+
+        if not best_article:
+            print("\n⚠️ Не нашли подходящих статей в этом цикле. Попробуем в следующий раз.")
+            posted_ids = posted_ids[-500:]
+            save_json(POSTED_FILE, posted_ids)
+            return
+
+        print(f"\n{'─'*60}")
+        print(f"📝 Генерируем пост для: {best_article['title']}")
+        print(f"{'─'*60}")
+
+        post_text, image_prompt = generate_content(best_article)
+        print(f"  Пост готов: {len(post_text)} символов")
+        print(f"  Image: {image_prompt[:60]}")
 
         image_url = build_image_url(image_prompt)
-        msg_id    = send_for_approval(post_text, image_url, article["id"])
-        print(f"✓ Отправлено модератору (msg_id={msg_id})")
+        msg_id    = send_for_approval(post_text, image_url, best_article["id"])
+        print(f"\n✅ Отправлено модератору (msg_id={msg_id})")
 
-        pending[article["id"]] = {
+        pending[best_article["id"]] = {
             "post_text":  post_text,
             "image_url":  image_url,
-            "title":      article["title"],
-            "url":        article["url"],
+            "title":      best_article["title"],
+            "url":        best_article["url"],
             "msg_id":     msg_id,
+            "channel":    CHANNEL_TOPIC,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        posted_ids.append(article["id"])
         posted_ids = posted_ids[-500:]
 
         save_json(PENDING_FILE, pending)
         save_json(POSTED_FILE,  posted_ids)
-        print("✓ Готово\n")
+        print("✅ ГОТОВО\n")
 
     except Exception as e:
-        msg = f"❌ Ошибка:\n{type(e).__name__}: {e}"
+        msg = f"❌ Ошибка [{CHANNEL_TOPIC}]:\n{type(e).__name__}: {e}"
         print(msg)
         notify_moderator(msg)
         raise
