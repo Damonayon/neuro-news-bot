@@ -11,7 +11,7 @@
 - [x] **T1.3** — Централизованное логирование (stdout + БД + Telegram-алерт + Sentry опционально) ✓
 - [x] **T1.4** — Retry + Circuit Breaker + Deadline (`tenacity`, `bot/http.py`) ✓
 - [x] **T1.5** — 🆕 Стабильная картинка (Telegram file_id) + канонизация URL + `.env.example` ✓
-- [ ] **T1.6** — Health-check workflow (каждые 30 мин) + чистка просроченных pending
+- [x] **T1.6** — Health-check workflow (каждые 30 мин) + чистка просроченных pending ✓
 - [ ] **T1.7** — Backup-стратегия + Alembic-миграции БД
 - [ ] **T1.8** — Защита секретов и безопасность (`gitleaks`, `SECURITY.md`) + Dependabot
 - [ ] **T1.9** — Pre-commit hooks (`black`, `ruff`, `mypy`)
@@ -69,7 +69,7 @@
 
 ---
 
-**Текущая задача:** T1.6 — Health-check workflow
+**Текущая задача:** T1.7 — Backup + Alembic-миграции БД
 
 **Бонусом закрыто в T1.2:** C2, C6, W1
 **Бонусом закрыто в T1.3:** C3, часть W10

@@ -1,0 +1,60 @@
+name: 🩺 Health-check
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+# Та же группа, что и у двух основных workflow — все они пишут в data/bot.db.
+concurrency:
+  group: data-write
+  cancel-in-progress: false
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📥 Клонируем репозиторий
+        uses: actions/checkout@v4
+
+      - name: 🐍 Python 3.11 + кэш
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: 📦 Зависимости
+        run: pip install -r requirements.txt
+
+      - name: 🩺 Проверки
+        env:
+          TELEGRAM_BOT_TOKEN:    ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_MODERATOR_ID: ${{ secrets.TELEGRAM_MODERATOR_ID }}
+          TELEGRAM_CHANNEL_ID:   ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          GH_MODELS_TOKEN:       ${{ secrets.GH_MODELS_TOKEN }}
+
+          SENTRY_DSN:            ${{ secrets.SENTRY_DSN }}
+          SENTRY_ENVIRONMENT:    production
+          LOG_LEVEL:             INFO
+
+          CHANNEL_TOPIC:    ${{ vars.CHANNEL_TOPIC    || 'Нейро-новости' }}
+          CHANNEL_NICHE:    ${{ vars.CHANNEL_NICHE    || 'искусственный интеллект и нейросети' }}
+          CHANNEL_AUDIENCE: ${{ vars.CHANNEL_AUDIENCE || 'русскоязычные, 18-45 лет, интересуются технологиями и будущим' }}
+          CHANNEL_LANG:     ${{ vars.CHANNEL_LANG     || 'русский' }}
+          RSS_FEEDS:        ${{ vars.RSS_FEEDS        || '' }}
+        run: python scripts/health_check.py
+
+      - name: 💾 Сохраняем данные
+        if: always()
+        run: |
+          git config --local user.email "bot@github.com"
+          git config --local user.name  "Neuro-News Bot"
+          git stash --include-untracked || true
+          git pull --rebase origin main || true
+          git stash pop || true
+          git add data/
+          git diff --staged --quiet || git commit -m "🩺 Health [skip ci]"
+          git push
