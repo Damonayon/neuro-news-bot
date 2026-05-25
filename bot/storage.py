@@ -174,11 +174,13 @@ def mark_published(session: Session, post: Post) -> None:
     post.status = POST_STATUS_PUBLISHED
     post.decided_at = now
     post.published_at = now
+    session.flush()
 
 
 def mark_rejected(session: Session, post: Post) -> None:
     post.status = POST_STATUS_REJECTED
     post.decided_at = datetime.now(UTC)
+    session.flush()
 
 
 # ─── system_state ────────────────────────────────────────────────────────────
@@ -194,8 +196,10 @@ def set_state(session: Session, key: str, value: str) -> None:
     row = session.get(SystemState, key)
     if row is None:
         session.add(SystemState(key=key, value=value))
+        session.flush()
     else:
         row.value = value
+        session.flush()
 
 
 # ─── удобные обёртки ─────────────────────────────────────────────────────────

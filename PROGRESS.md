@@ -16,7 +16,7 @@
 - [x] **T1.8** — Защита секретов и безопасность (`gitleaks`, `SECURITY.md`) + Dependabot ✓
 - [x] **T1.9** — Pre-commit hooks (`black`, `ruff`, `mypy`) ✓
 - [x] **T1.10** — Type hints и docstrings (mypy --strict — 0 ошибок на 13 файлах) ✓
-- [ ] **T1.11** — Базовые тесты pytest (покрытие ≥70%) + CLI-утилита `status`
+- [x] **T1.11** — Тесты pytest (66 тестов, core 88%) + CLI-утилита `status` ✓
 - [ ] **T1.12** — CI/CD pipeline (тесты при push/PR)
 - [ ] **T1.13** — Документация архитектуры (`ARCHITECTURE.md` + Mermaid)
 
@@ -69,7 +69,7 @@
 
 ---
 
-**Текущая задача:** T1.11 — Тесты pytest + CLI-утилита `status`
+**Текущая задача:** T1.12 — CI/CD pipeline (тесты при push/PR)
 
 **Бонусом закрыто в T1.2:** C2, C6, W1
 **Бонусом закрыто в T1.3:** C3, часть W10
