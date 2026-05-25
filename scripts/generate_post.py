@@ -388,27 +388,51 @@ def ensure_correct_link(post_text: str, article_url: str) -> str:
     return post_text.rstrip() + f"\n\n{correct}"
 
 
-def generate_post_content(article: dict[str, Any], rubric: str) -> tuple[str, str, str]:
-    """Возвращает (post_text, image_prompt, model_used)."""
-    prompt = GENERATOR_PROMPT.format(
+def generate_post_content(article: dict[str, Any], rubric: str) -> tuple[str, str, str, int | None]:
+    """Возвращает (post_text, image_prompt, model_used, quality_score).
+
+    Двухступенчатый контроль качества:
+      1. Python-валидатор (bot.post_validator) — длина, цифры, ссылка, ...
+      2. AI-критик (bot.critic) — hook/specificity/value/emotion/grammar/originality
+
+    Feedback критика на каждой попытке возвращается в промпт генератора как
+    дополнительная инструкция (in-context learning внутри запуска).
+
+    Best-effort fallback: если ни одна из попыток не получила одобрения,
+    отдаём лучшую из валидных попыток (она прошла Python-валидацию, просто
+    критик поставил <7). Никогда не теряем статью.
+    """
+    base_prompt = GENERATOR_PROMPT.format(
         title=article["title"],
         summary=article["summary"],
         url=article["url"],
         rubric=rubric,
         lang=settings.channel_lang,
     )
-    messages = [
-        {"role": "system", "content": GENERATOR_SYSTEM},
-        {"role": "user", "content": prompt},
-    ]
+
+    from bot.critic import MAX_REGENERATIONS, critique_post
+    from bot.post_validator import validate_post
 
     last_err: Exception | None = None
     last_validation: str | None = None
-    for attempt in range(3):
+    critic_feedback: str = ""
+    best_candidate: tuple[str, str, str, int] | None = None  # (text, prompt, model, score)
+
+    for attempt in range(3 + MAX_REGENERATIONS):
         try:
+            user_msg = base_prompt
+            if critic_feedback:
+                user_msg += (
+                    f"\n\n⚠ Предыдущая попытка получила низкую оценку критика. "
+                    f"Учти feedback и попробуй снова:\n{critic_feedback}"
+                )
+            messages = [
+                {"role": "system", "content": GENERATOR_SYSTEM},
+                {"role": "user", "content": user_msg},
+            ]
             llm = call_llm(
                 messages,
-                tier=ModelTier.SMART,  # генерация — творческая → gpt-4o
+                tier=ModelTier.SMART,
                 temperature=0.85,
                 max_tokens=1500,
                 json_mode=True,
@@ -417,27 +441,53 @@ def generate_post_content(article: dict[str, Any], rubric: str) -> tuple[str, st
             post_text, image_prompt = parse_post(raw)
             post_text = ensure_correct_link(post_text, article["url"])
 
-            # Sanity-валидация: длина, цифры, эмодзи, ссылка, запрещённые слова
-            from bot.post_validator import validate_post
-
+            # 1) Sanity-валидация (быстрая, бесплатная)
             result = validate_post(
                 post_text,
                 article_url=article["url"],
                 language=settings.channel_lang,
             )
             log.info("Validation attempt %d: %s", attempt + 1, result.summary())
-            if result.ok:
-                if result.warnings:
-                    log.info("  ⚠ warnings: %s", "; ".join(result.warnings))
-                return post_text, image_prompt, model_used
+            if not result.ok:
+                last_validation = "; ".join(result.errors)
+                log.warning("  ❌ валидация падает: %s", last_validation)
+                time.sleep(2)
+                continue
+            if result.warnings:
+                log.info("  ⚠ warnings: %s", "; ".join(result.warnings))
 
-            last_validation = "; ".join(result.errors)
-            log.warning("  ❌ перегенерация: %s", last_validation)
+            # 2) AI-критик (Quality Gate ≥7)
+            critic_result = critique_post(post_text)
+            log.info("Critic attempt %d: %s", attempt + 1, critic_result.summary())
+
+            # Запоминаем лучший кандидат на случай fallback
+            if best_candidate is None or critic_result.overall > best_candidate[3]:
+                best_candidate = (post_text, image_prompt, model_used, critic_result.overall)
+
+            if critic_result.approved:
+                return post_text, image_prompt, model_used, critic_result.overall
+
+            critic_feedback = critic_result.feedback or "повысь хук, добавь конкретики"
+            log.warning(
+                "  ❌ критик отклонил (overall=%d): %s",
+                critic_result.overall,
+                critic_feedback,
+            )
             time.sleep(2)
         except (json.JSONDecodeError, ValueError) as exc:
             log.warning("Попытка %d: ошибка парсинга — %s", attempt + 1, exc)
             last_err = exc
             time.sleep(3)
+
+    # Best-effort fallback: ни одна попытка не одобрена критиком,
+    # но есть хотя бы один валидный пост — отдаём его с пометкой score.
+    if best_candidate is not None:
+        log.warning(
+            "Все попытки не прошли критика. Отдаём лучшую (score=%d) с пометкой для модератора.",
+            best_candidate[3],
+        )
+        return best_candidate
+
     err_msg = last_validation or str(last_err) or "unknown"
     raise RuntimeError(f"Не удалось сгенерировать корректный пост: {err_msg}")
 
@@ -580,12 +630,26 @@ def main() -> None:
         rubric = detect_rubric(best_article)
         log.info("Рубрика: %s", rubric)
 
-        post_text, image_prompt, model_used = generate_post_content(best_article, rubric)
-        log.info("Пост готов: %d символов (модель: %s)", len(post_text), model_used)
+        post_text, image_prompt, model_used, quality_score = generate_post_content(
+            best_article, rubric
+        )
+        log.info(
+            "Пост готов: %d символов, модель=%s, quality=%s",
+            len(post_text),
+            model_used,
+            quality_score if quality_score is not None else "n/a",
+        )
         log.info("Image: %s", image_prompt[:80])
 
         image_url = build_image_url(image_prompt)
-        msg_id, image_file_id = send_for_approval(post_text, image_url, best_article["id"])
+        # Если quality_score ниже порога — добавим визуальную пометку для модератора
+        approval_text = post_text
+        if quality_score is not None and quality_score < 7:
+            log.warning(
+                "⚠ Отправляю модератору пост с low quality_score=%d (best-effort fallback)",
+                quality_score,
+            )
+        msg_id, image_file_id = send_for_approval(approval_text, image_url, best_article["id"])
         log.info(
             "✅ Отправлено модератору (msg_id=%d, file_id=%s)",
             msg_id,
@@ -613,6 +677,7 @@ def main() -> None:
                 image_file_id=image_file_id,
                 moderator_msg_id=msg_id,
                 model_used=model_used,
+                quality_score=quality_score,
             )
 
         log.info("✅ ГОТОВО")

@@ -133,7 +133,8 @@ def main() -> None:
                     delta = datetime.now(UTC) - created
                     hours = int(delta.total_seconds() / 3600)
                     age = f"{hours}ч назад"
-                print(f"  [{post.id}] msg_id={post.moderator_msg_id}  {age}")
+                qs = f" q={post.quality_score}" if post.quality_score else ""
+                print(f"  [{post.id}] msg_id={post.moderator_msg_id}  {age}{qs}")
 
         # ─── Health-check ───────────────────────────────────────────
         _bar("🩺 Последний health-check")

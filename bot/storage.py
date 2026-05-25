@@ -138,6 +138,7 @@ def create_pending_post(
     moderator_msg_id: int,
     image_file_id: str | None = None,
     model_used: str | None = None,
+    quality_score: int | None = None,
 ) -> Post:
     """Создаёт пост в статусе pending (отправлен модератору)."""
     post = Post(
@@ -149,6 +150,7 @@ def create_pending_post(
         image_file_id=image_file_id,
         moderator_msg_id=moderator_msg_id,
         model_used=model_used,
+        quality_score=quality_score,
         status=POST_STATUS_PENDING,
     )
     session.add(post)
