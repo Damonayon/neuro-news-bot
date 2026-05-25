@@ -308,25 +308,37 @@ def _call_model(
     messages: list[dict[str, Any]],
     temperature: float,
     max_tokens: int,
+    *,
+    json_mode: bool = False,
 ) -> requests.Response:
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    # JSON mode: модель обязана вернуть валидный JSON-объект.
+    # Поддерживается всеми OpenAI-совместимыми эндпоинтами GitHub Models.
+    # Требует, чтобы в промпте было слово "JSON" (есть в обоих наших промптах).
+    if json_mode:
+        body["response_format"] = {"type": "json_object"}
     return http_post(
         GITHUB_MODELS_URL,
         headers={
             "Authorization": f"Bearer {settings.gh_models_token}",
             "Content-Type": "application/json",
         },
-        json={
-            "model": model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-        },
+        json=body,
         timeout=60,
     )
 
 
 def call_ai(
-    messages: list[dict[str, Any]], *, temperature: float = 0.7, max_tokens: int = 1500
+    messages: list[dict[str, Any]],
+    *,
+    temperature: float = 0.7,
+    max_tokens: int = 1500,
+    json_mode: bool = False,
 ) -> tuple[str, str]:
     """Возвращает (content, model_used).
 
@@ -337,7 +349,7 @@ def call_ai(
     last_err: Exception | None = None
     for model in MODELS:
         try:
-            resp = _call_model(model, messages, temperature, max_tokens)
+            resp = _call_model(model, messages, temperature, max_tokens, json_mode=json_mode)
             if resp.status_code == 200:
                 content = resp.json()["choices"][0]["message"]["content"].strip()
                 return content, model
@@ -376,7 +388,7 @@ def filter_article(article: dict[str, Any]) -> tuple[str, str]:
         {"role": "user", "content": FILTER_PROMPT.format(**article)},
     ]
     try:
-        raw, _ = call_ai(messages, temperature=0.3, max_tokens=200)
+        raw, _ = call_ai(messages, temperature=0.3, max_tokens=200, json_mode=True)
         data = _extract_json(raw)
         return data.get("quality", "LOW"), data.get("reason", "")
     except (json.JSONDecodeError, ValueError, KeyError) as exc:
@@ -452,17 +464,36 @@ def generate_post_content(article: dict[str, Any], rubric: str) -> tuple[str, st
     ]
 
     last_err: Exception | None = None
+    last_validation: str | None = None
     for attempt in range(3):
         try:
-            raw, model_used = call_ai(messages, temperature=0.85, max_tokens=1500)
+            raw, model_used = call_ai(messages, temperature=0.85, max_tokens=1500, json_mode=True)
             post_text, image_prompt = parse_post(raw)
             post_text = ensure_correct_link(post_text, article["url"])
-            return post_text, image_prompt, model_used
+
+            # Sanity-валидация: длина, цифры, эмодзи, ссылка, запрещённые слова
+            from bot.post_validator import validate_post
+
+            result = validate_post(
+                post_text,
+                article_url=article["url"],
+                language=settings.channel_lang,
+            )
+            log.info("Validation attempt %d: %s", attempt + 1, result.summary())
+            if result.ok:
+                if result.warnings:
+                    log.info("  ⚠ warnings: %s", "; ".join(result.warnings))
+                return post_text, image_prompt, model_used
+
+            last_validation = "; ".join(result.errors)
+            log.warning("  ❌ перегенерация: %s", last_validation)
+            time.sleep(2)
         except (json.JSONDecodeError, ValueError) as exc:
             log.warning("Попытка %d: ошибка парсинга — %s", attempt + 1, exc)
             last_err = exc
             time.sleep(3)
-    raise RuntimeError(f"Не удалось сгенерировать корректный пост: {last_err}")
+    err_msg = last_validation or str(last_err) or "unknown"
+    raise RuntimeError(f"Не удалось сгенерировать корректный пост: {err_msg}")
 
 
 # ─── Картинки ────────────────────────────────────────────────────────────────
