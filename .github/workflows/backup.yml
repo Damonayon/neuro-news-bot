@@ -1,0 +1,79 @@
+name: 💾 Backup БД
+
+on:
+  schedule:
+    - cron: "30 3 * * *"   # 03:30 UTC ежедневно (после ночного цикла генерации)
+  workflow_dispatch:
+
+# НЕ data-write — backup не пишет в data/, только читает. Может идти параллельно.
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📥 Клонируем main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: 🐍 Python 3.11 + кэш
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: 📦 Зависимости
+        run: pip install -r requirements.txt
+
+      - name: 💾 Делаем бэкап
+        env:
+          # Бэкап читает БД через bot.config — нужны env-переменные.
+          TELEGRAM_BOT_TOKEN:    ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_MODERATOR_ID: ${{ secrets.TELEGRAM_MODERATOR_ID }}
+          TELEGRAM_CHANNEL_ID:   ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          GH_MODELS_TOKEN:       ${{ secrets.GH_MODELS_TOKEN }}
+          CHANNEL_TOPIC:         ${{ vars.CHANNEL_TOPIC || 'Нейро-новости' }}
+        run: python scripts/backup_db.py
+
+      - name: 📤 Коммитим в orphan-ветку backups
+        run: |
+          set -e
+          git config --local user.email "bot@github.com"
+          git config --local user.name  "Neuro-News Bot"
+
+          # Каталог backups/ в .gitignore у main → файлы untracked. Скопируем во временное место,
+          # переключимся на orphan-ветку, вернём их обратно.
+          TMP="$RUNNER_TEMP/backups"
+          mkdir -p "$TMP"
+          cp -a backups/. "$TMP/" 2>/dev/null || true
+
+          if git ls-remote --heads origin backups | grep -q backups; then
+            git fetch origin backups:backups
+            git checkout backups
+          else
+            # Создаём чистую orphan-ветку
+            git checkout --orphan backups
+            git rm -rf --quiet --cached . 2>/dev/null || true
+            git clean -fd
+          fi
+
+          mkdir -p backups
+          cp -a "$TMP/." backups/ 2>/dev/null || true
+
+          # Чистим старые архивы ОТ файлов: в orphan-ветке хранятся только наши .gz
+          # (актуальный список уже отражён в каталоге — старые удалил скрипт ранее).
+          # Так репо ветки backups не распухает.
+
+          # На случай, если в orphan-ветке лежат файлы main (первый раз) — удаляем всё кроме backups/
+          find . -mindepth 1 -maxdepth 1 -not -name backups -not -name '.git' -exec rm -rf {} +
+
+          git add -A
+          git diff --staged --quiet || git commit -m "💾 Backup $(date -u +%Y-%m-%d) [skip ci]"
+          git push origin backups

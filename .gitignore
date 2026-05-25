@@ -52,3 +52,6 @@ logs/
 
 # README — только локально (по решению владельца)
 README.md
+
+# Локальные бэкапы (хранятся в orphan-ветке `backups`, не в main)
+backups/

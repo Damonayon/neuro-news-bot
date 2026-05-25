@@ -92,8 +92,54 @@ def session_scope() -> Iterator[Session]:
 
 
 def init_db() -> None:
-    """Создаёт все таблицы (если их нет). Идемпотентно — можно звать при каждом запуске."""
-    Base.metadata.create_all(bind=get_engine())
+    """Гарантирует существование схемы.
+
+    1. Если есть Alembic-конфиг и БД пустая → штампует head (новая установка).
+    2. Если БД уже есть, но без alembic_version → штампует head (legacy DB).
+    3. Если всё в порядке → ничего не делает.
+
+    Идемпотентно: можно звать при каждом запуске скрипта.
+    """
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+    _ensure_alembic_stamped(engine)
+
+
+def _ensure_alembic_stamped(engine: Engine) -> None:
+    """Проставляет alembic head на БД, если она ещё не помечена.
+
+    Нужно для двух кейсов:
+    - свежая установка из форка (новый канал): схема создана через
+      create_all, Alembic должен сразу считать её актуальной;
+    - legacy-БД (создана до T1.7): создаём таблицу alembic_version
+      и заводим в неё текущий head.
+    """
+    try:
+        from pathlib import Path
+
+        from alembic import command
+        from alembic.config import Config
+        from alembic.runtime.migration import MigrationContext
+
+        with engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            current = ctx.get_current_revision()
+            if current is not None:
+                return  # уже проштамповано
+
+        ini_path = Path(__file__).resolve().parent.parent / "alembic.ini"
+        if not ini_path.exists():
+            return  # alembic ещё не настроен — пропускаем
+
+        cfg = Config(str(ini_path))
+        # Передаём URL явно, чтобы Alembic не зависел от cwd
+        from bot.config import get_settings
+
+        cfg.set_main_option("sqlalchemy.url", get_settings().db_url)
+        command.stamp(cfg, "head")
+    except Exception:
+        # init_db не должен падать из-за alembic — это бонусная фича.
+        pass
 
 
 def db_path() -> Path | None:
