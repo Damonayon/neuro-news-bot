@@ -118,7 +118,8 @@ def best_telegram_file_id(send_photo_response: dict[str, Any]) -> str | None:
             reverse=True,
         )
         if sized:
-            return sized[0]["file_id"]
+            file_id = sized[0]["file_id"]
+            return str(file_id) if file_id is not None else None
     except (KeyError, TypeError):
         pass
     return None

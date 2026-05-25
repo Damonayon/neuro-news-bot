@@ -9,6 +9,7 @@ from __future__ import annotations
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import requests
 
@@ -45,14 +46,15 @@ PROCESS_DEADLINE_SEC = 120
 # ─── Telegram-обёртки ────────────────────────────────────────────────────────
 
 
-def tg(method: str, payload: dict) -> dict:
+def tg(method: str, payload: dict[str, Any]) -> dict[str, Any]:
     try:
         resp = http_post(
             f"https://api.telegram.org/bot{settings.telegram_bot_token}/{method}",
             json=payload,
             timeout=15,
         )
-        return resp.json()
+        data: dict[str, Any] = resp.json()
+        return data
     except (requests.RequestException, CircuitOpenError, DeadlineExceededError) as exc:
         return {"ok": False, "description": f"network: {exc}"}
 
@@ -61,7 +63,7 @@ def notify_moderator(text: str) -> None:
     tg("sendMessage", {"chat_id": settings.telegram_moderator_id, "text": text})
 
 
-def get_updates(offset: int | None) -> list[dict]:
+def get_updates(offset: int | None) -> list[dict[str, Any]]:
     payload = {"limit": 100, "timeout": 0}
     if offset is not None:
         payload["offset"] = offset

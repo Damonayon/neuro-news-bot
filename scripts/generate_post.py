@@ -22,6 +22,7 @@ import time
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import feedparser
 import requests
@@ -86,10 +87,10 @@ def notify_moderator(text: str) -> None:
 # ─── Загрузка статей из RSS ──────────────────────────────────────────────────
 
 
-def fetch_articles() -> list[dict]:
+def fetch_articles() -> list[dict[str, Any]]:
     """Скачиваем каждый RSS-фид через http_get (retry + UA + timeout),
     парсим через feedparser из байтов. Ошибки одного фида не валят остальные."""
-    articles: list[dict] = []
+    articles: list[dict[str, Any]] = []
     for feed_url in settings.rss_feeds:
         try:
             resp = http_get(feed_url, timeout=15)
@@ -302,7 +303,12 @@ IMAGE PROMPT (английский, до 130 символов)
 # ─── Вызовы GitHub Models ────────────────────────────────────────────────────
 
 
-def _call_model(model: str, messages: list[dict], temperature: float, max_tokens: int):
+def _call_model(
+    model: str,
+    messages: list[dict[str, Any]],
+    temperature: float,
+    max_tokens: int,
+) -> requests.Response:
     return http_post(
         GITHUB_MODELS_URL,
         headers={
@@ -320,7 +326,7 @@ def _call_model(model: str, messages: list[dict], temperature: float, max_tokens
 
 
 def call_ai(
-    messages: list[dict], *, temperature: float = 0.7, max_tokens: int = 1500
+    messages: list[dict[str, Any]], *, temperature: float = 0.7, max_tokens: int = 1500
 ) -> tuple[str, str]:
     """Возвращает (content, model_used).
 
@@ -350,20 +356,21 @@ def call_ai(
     raise RuntimeError(f"Все модели недоступны: {last_err}")
 
 
-def _extract_json(raw: str) -> dict:
+def _extract_json(raw: str) -> dict[str, Any]:
     """Достаёт JSON из ответа модели — даже если он в markdown-блоке."""
     cleaned = raw.strip()
     if "```" in cleaned:
         match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, re.DOTALL)
         if match:
             cleaned = match.group(1)
-    return json.loads(cleaned)
+    data: dict[str, Any] = json.loads(cleaned)
+    return data
 
 
 # ─── Фильтр качества ─────────────────────────────────────────────────────────
 
 
-def filter_article(article: dict) -> tuple[str, str]:
+def filter_article(article: dict[str, Any]) -> tuple[str, str]:
     messages = [
         {"role": "system", "content": FILTER_SYSTEM},
         {"role": "user", "content": FILTER_PROMPT.format(**article)},
@@ -380,7 +387,7 @@ def filter_article(article: dict) -> tuple[str, str]:
 # ─── Определение рубрики (эвристика) ─────────────────────────────────────────
 
 
-def detect_rubric(article: dict) -> str:
+def detect_rubric(article: dict[str, Any]) -> str:
     text = (article["title"] + " " + article["summary"]).lower()
     if any(
         w in text
@@ -430,7 +437,7 @@ def ensure_correct_link(post_text: str, article_url: str) -> str:
     return post_text.rstrip() + f"\n\n{correct}"
 
 
-def generate_post_content(article: dict, rubric: str) -> tuple[str, str, str]:
+def generate_post_content(article: dict[str, Any], rubric: str) -> tuple[str, str, str]:
     """Возвращает (post_text, image_prompt, model_used)."""
     prompt = GENERATOR_PROMPT.format(
         title=article["title"],
@@ -556,8 +563,8 @@ def main() -> None:
             "Фильтрация качества top-%d кандидатов:",
             min(MAX_CANDIDATES_TO_FILTER, len(new_articles)),
         )
-        best_article: dict | None = None
-        first_medium: dict | None = None
+        best_article: dict[str, Any] | None = None
+        first_medium: dict[str, Any] | None = None
 
         for i, article in enumerate(new_articles[:MAX_CANDIDATES_TO_FILTER]):
             log.info("[%d] %s", i + 1, article["title"][:70])
@@ -610,7 +617,7 @@ def main() -> None:
 
         # Финальная транзакция: сохраняем рубрику и создаём pending-Post
         with session_scope() as session:
-            article = save_article(
+            article_obj = save_article(
                 session,
                 channel_id=channel_id,
                 url=best_article["url"],
@@ -621,7 +628,7 @@ def main() -> None:
             )
             create_pending_post(
                 session,
-                article=article,
+                article=article_obj,
                 channel_id=channel_id,
                 post_text=post_text,
                 image_url=image_url,

@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Any, TypeVar, cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -199,11 +201,14 @@ def set_state(session: Session, key: str, value: str) -> None:
 # ─── удобные обёртки ─────────────────────────────────────────────────────────
 
 
-def with_session(func):
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def with_session(func: F) -> F:
     """Декоратор: открывает session_scope и передаёт session первым аргументом."""
 
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         with session_scope() as session:
             return func(session, *args, **kwargs)
 
-    return wrapper
+    return cast(F, wrapper)

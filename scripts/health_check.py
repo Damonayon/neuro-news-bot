@@ -130,7 +130,7 @@ def cleanup_stale_pending() -> int:
             .values(status=POST_STATUS_FAILED, decided_at=datetime.now(UTC))
         )
         result = session.execute(stmt)
-        return result.rowcount or 0
+        return result.rowcount or 0  # type: ignore[attr-defined]
 
 
 def cleanup_old_logs() -> int:
@@ -143,7 +143,7 @@ def cleanup_old_logs() -> int:
         if total > LOG_TABLE_MAX_ROWS:
             # Жёсткая чистка по возрасту
             r = session.execute(delete(LogEntry).where(LogEntry.created_at < cutoff))
-            deleted = r.rowcount or 0
+            deleted = r.rowcount or 0  # type: ignore[attr-defined]
 
             # Если всё равно много — оставляем только последние LOG_TABLE_MAX_ROWS
             total_after = (
@@ -159,7 +159,7 @@ def cleanup_old_logs() -> int:
                 )
                 if ids_to_delete:
                     r = session.execute(delete(LogEntry).where(LogEntry.id.in_(ids_to_delete)))
-                    deleted += r.rowcount or 0
+                    deleted += r.rowcount or 0  # type: ignore[attr-defined]
     return deleted
 
 

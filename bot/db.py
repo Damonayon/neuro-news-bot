@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -54,7 +55,7 @@ def get_engine() -> Engine:
 
 def _enable_sqlite_pragmas(engine: Engine) -> None:
     @event.listens_for(engine, "connect")
-    def _set_pragmas(dbapi_connection, _connection_record) -> None:
+    def _set_pragmas(dbapi_connection: Any, _connection_record: Any) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA journal_mode=WAL")

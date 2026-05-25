@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Iterable
+from collections.abc import Sequence
 from dataclasses import dataclass
 from threading import Lock
 from typing import Any
@@ -321,7 +321,7 @@ def http_post(url: str, **kwargs: Any) -> requests.Response:
     return default_client().post(url, **kwargs)
 
 
-__all__: Iterable[str] = (
+__all__: Sequence[str] = (
     "CircuitOpenError",
     "DeadlineExceededError",
     "HttpClient",

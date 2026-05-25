@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 # Чтобы скрипт работал и через `python scripts/migrate_json_to_db.py`,
 # и через `python -m`, добавим корень проекта в sys.path.
@@ -49,7 +50,7 @@ POSTED_FILE = PROJECT_ROOT / "data" / "posted_ids.json"
 OFFSET_FILE = PROJECT_ROOT / "data" / "tg_offset.json"
 
 
-def _load_json(path: Path, default):
+def _load_json(path: Path, default: Any) -> Any:
     try:
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)
@@ -57,7 +58,7 @@ def _load_json(path: Path, default):
         return default
 
 
-def migrate_posted_ids(session, channel_id: int) -> int:
+def migrate_posted_ids(session: Any, channel_id: int) -> int:
     """posted_ids.json — это только хэши, без URL. Создаём article-плэйсхолдеры.
 
     Это нужно, чтобы дедупликация продолжала работать после перехода на БД
@@ -97,7 +98,7 @@ def migrate_posted_ids(session, channel_id: int) -> int:
     return inserted
 
 
-def migrate_pending(session, channel_id: int) -> int:
+def migrate_pending(session: Any, channel_id: int) -> int:
     """pending.json — словарь art_hash → {post_text, image_url, msg_id, url, title, created_at}."""
     pending = _load_json(PENDING_FILE, {})
     if not isinstance(pending, dict):
@@ -150,7 +151,7 @@ def migrate_pending(session, channel_id: int) -> int:
     return inserted
 
 
-def migrate_offset(session) -> bool:
+def migrate_offset(session: Any) -> bool:
     """tg_offset.json → system_state['tg_offset']."""
     data = _load_json(OFFSET_FILE, {})
     if not isinstance(data, dict):
